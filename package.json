@@ -1,0 +1,214 @@
+{
+  "name": "Bearing",
+  "author": "astosia",
+  "version": "1.1.0",
+  "keywords": [
+    "analog",
+    "analogue",
+    "bearings",
+    "roundabout",
+    "marbles"
+  ],
+  "private": true,
+  "dependencies": {
+    "@rebble/clay": "^1.0.8",
+    "pebble-fctx": "^1.6.5",
+    "pebble-fctx-compiler": "^1.2.2"
+  },
+  "pebble": {
+    "displayName": "Bearing",
+    "uuid": "47d16e40-1713-434c-8b6b-4ed76afbaace",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "gabbro",
+      "emery",
+      "chalk",
+      "basalt",
+      "flint",
+      "diorite",
+      "aplite"
+    ],
+    "watchapp": {
+      "watchface": true
+    },
+    "capabilities": [
+      "configurable"
+    ],
+    "messageKeys": [
+      "EnableSecondsHand",
+      "SecondsVisibleTime",
+      "EnableDate",
+      "EnableBattery",
+      "HoursCentre",
+      "AnimOn",
+      "EnableBatteryLine",
+      "EnableLogo",
+      "LogoText",
+      "BackgroundColor1",
+      "ShadowColor",
+      "ShadowColor2",
+      "BallColor3",
+      "BallColor2",
+      "BallColor1",
+      "BallColor0",
+      "TextColor1",
+      "MajorTickColor",
+      "MinorTickColor",
+      "TextColor3",
+      "DateColor",
+      "BatteryColor",
+      "BatteryArc",
+      "ShadowOn",
+      "HoursHandColor",
+      "HoursHandBorderColor",
+      "MinutesHandColor",
+      "MinutesHandBorderColor",
+      "SecondsHandColor",
+      "BatteryLineColor",
+      "BWBackgroundColor1",
+      "BWBackgroundColor2",
+      "BWTextColor1",
+      "BWSecondsHandColor",
+      "BWTickColor",
+      "BWDateColor",
+      "BTQTColor",
+      "BWThemeSelect",
+      "ThemeSelect",
+      "BWShadowOn",
+      "Font",
+      "VibeOn",
+      "FGColor",
+      "BWFGColor",
+      "RemoveZero24h",
+      "AddZero12h",
+      "LineColor",
+      "showlocalAMPM",
+      "ShowTime",
+      "EnableLines",
+      "EnableMinorTick",
+      "EnableMajorTick",
+      "ForegroundShape",
+      "UseWeather",
+      "WeatherProv",
+      "Lat",
+      "Long",
+      "APIKEY_User",
+      "UpSlider",
+      "WeatherUnit",
+      "UseUVI",
+      "RainUnit",
+      "WindUnit",
+      "UVArcColor",
+      "UVMaxColor",
+      "UVValColor",
+      "UVNowColor",
+      "UVIndexMax",
+      "UVIndexDay",
+      "UVIndexNow",
+      "WeatherTemp",
+      "WeatherWind",
+      "WindIconNow",
+      "TempFore",
+      "IconFore",
+      "IconNow",
+      "WindFore",
+      "Weathertime",
+      "NameLocation",
+      "ShadowOffset"
+    ],
+    "resources": {
+      "media": [
+        {
+          "file": "fonts/dripicons-v2.ttf",
+          "characterRegex": "[z]",
+          "name": "FONT_DRIPICONS_14",
+          "targetPlatforms": [
+            "gabbro",
+            "emery"
+          ],
+          "type": "font"
+        },
+        {
+          "file": "fonts/dripicons-v2.ttf",
+          "characterRegex": "[z]",
+          "name": "FONT_DRIPICONS_12",
+          "targetPlatforms": [
+            "aplite",
+            "basalt",
+            "chalk",
+            "flint",
+            "diorite"
+          ],
+          "type": "font"
+        },
+        {
+          "name": "DIN_CONDENSED_FFONT",
+          "file": "data/Conthrax-Condensed.ffont",
+          "targetPlatforms": [
+            "basalt",
+            "chalk",
+            "flint",
+            "diorite",
+            "emery",
+            "gabbro"
+          ],
+          "type": "raw",
+          "characterRegex": "[0-9:.AMP]"
+        },
+        {
+          "name": "CONTHRAX_FFONT",
+          "type": "raw",
+          "characterRegex": "[0-9:.A-Z]",
+          "file": "data/Conthrax-SemiBold.ffont"
+        },
+        {
+          "file": "fonts/Weathericons.ttf",
+          "characterRegex": "[]",
+          "name": "FONT_WEATHERICONS_20",
+          "targetPlatforms": [
+            "aplite",
+            "basalt",
+            "chalk",
+            "diorite",
+            "flint"
+          ],
+          "type": "font"
+        },
+        {
+          "file": "fonts/Weathericons.ttf",
+          "characterRegex": "[]",
+          "name": "FONT_WEATHERICONS_31",
+          "targetPlatforms": [
+            "emery",
+            "gabbro"
+          ],
+          "type": "font"
+        },
+        {
+          "file": "fonts/Weathericons.ttf",
+          "characterRegex": "[]",
+          "name": "FONT_WEATHERICONS_12",
+          "targetPlatforms": [
+            "emery",
+            "gabbro"
+          ],
+          "type": "font"
+        },
+        {
+          "file": "fonts/Weathericons.ttf",
+          "characterRegex": "[]",
+          "name": "FONT_WEATHERICONS_10",
+          "targetPlatforms": [
+            "aplite",
+            "basalt",
+            "chalk",
+            "diorite",
+            "flint"
+          ],
+          "type": "font"
+        }
+      ]
+    }
+  }
+}

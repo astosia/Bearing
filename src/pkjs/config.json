@@ -1,0 +1,406 @@
+[
+  {
+    "type": "heading",
+    "defaultValue": "Hybrid"
+  },
+  {
+    "type": "text",
+    "defaultValue": "<p>by astosia</p>"
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Features"
+      },
+      {
+        "type": "toggle",
+        "label": "Startup Animation",
+        "messageKey": "AnimOn",
+        "defaultValue": true
+      },
+      {
+        "type": "toggle",
+        "label": "Digital Time Visible",
+        "messageKey": "ShowTime",
+        "defaultValue": true
+      },
+      {
+        "type": "toggle",
+        "label": "Digital Time Style",
+        "messageKey": "HoursCentre",
+        "description": "Off = Minutes in centre, On = Hours in centre",
+        "defaultValue": true
+      },
+      {
+        "type": "toggle",
+        "messageKey": "showlocalAMPM",
+        "label": "AM/PM Visible",
+        "description": "Applies only when 12h time selected in watch settings",
+        "defaultValue": true
+      },
+      {
+        "type": "toggle",
+        "label": "Add leading zero to 12h time",
+        "messageKey": "AddZero12h",
+        "defaultValue": false
+      },
+      {
+        "type": "toggle",
+        "label": "Remove leading zero from 24h time",
+        "messageKey": "RemoveZero24h",
+        "defaultValue": false
+      },
+      {
+        "type": "toggle",
+        "label": "Battery Visible",
+        "messageKey": "EnableBattery",
+        "defaultValue": true
+      },
+      {
+        "type": "toggle",
+        "label": "Battery Style",
+        "description": "Off = Bar, On = Arc",
+        "messageKey": "BatteryArc",
+        "defaultValue": false
+      },
+      {
+        "type": "toggle",
+        "label": "Major Ticks Visible",
+        "messageKey": "EnableMajorTick",
+        "defaultValue": true
+      },
+      {
+        "type": "toggle",
+        "label": "Minor Ticks Visible",
+        "messageKey": "EnableMinorTick",
+        "defaultValue": true
+      },
+      {
+        "type": "toggle",
+        "messageKey": "VibeOn",
+        "label": "Vibrate on Bluetooth disconnect during Quiet Time",
+        "description": "If set to off, will still vibrate on disconnect, but not during quiet time",
+        "defaultValue": false
+      }
+    ]
+  },
+  {
+    "type": "submit",
+    "defaultValue": "Save"
+  },
+  {
+    "type": "section",
+    "capabilities": [
+      "COLOR"
+    ],
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Colours"
+      },
+      {
+        "type": "toggle",
+        "label": "Shadows on",
+        "description": "Shows or hides background, foreground and time ball shadows",
+        "messageKey": "ShadowOn",
+        "defaultValue": true
+      },
+      {
+        "type": "slider",
+        "messageKey": "ShadowOffset",
+        "capabilities": ["PLATFORM_GABBRO"],
+        "defaultValue": 7,
+        "label": "Background Shadow Offset",
+        "min": -10,
+        "max": 10,
+        "step": 1
+      },
+      {
+        "type": "slider",
+        "messageKey": "ShadowOffset",
+        "capabilities": ["PLATFORM_EMERY"],
+        "defaultValue": 6,
+        "label": "Background Shadow Offset",
+        "min": -10,
+        "max": 10,
+        "step": 1
+      },
+      {
+        "type": "slider",
+        "messageKey": "ShadowOffset",
+        "capabilities": ["PLATFORM_CHALK"],
+        "defaultValue": 3,
+        "label": "Background Shadow Offset",
+        "min": -8,
+        "max": 8,
+        "step": 1
+      },
+      {
+        "type": "slider",
+        "messageKey": "ShadowOffset",
+        "capabilities": ["PLATFORM_BASALT"],
+        "defaultValue": 3,
+        "label": "Background Shadow Offset",
+        "min": -8,
+        "max": 8,
+        "step": 1
+      },
+      {
+        "type": "radiogroup",
+        "messageKey": "ThemeSelect",
+        "defaultValue": "bu",
+        "label": "COLOUR THEME SELECT",
+        "options": [
+          {
+            "label": "White Foreground, Black Tracks",
+            "value": "wh"
+          },
+          {
+            "label": "Black Foreground, White Tracks",
+            "value": "bl"
+          },
+          {
+            "label": "Blue Foreground, Dark Blue Tracks",
+            "value": "bu"
+          },
+          {
+            "label": "Purple Background, Pink Tracks",
+            "value": "pl"
+          },
+          {
+            "label": "Black Foreground & Green Tracks",
+            "value": "gr"
+          },
+          {
+            "label": "Custom Colours",
+            "value": "cu"
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "defaultValue": "Custom Colours"
+      },
+      {
+        "type": "color",
+        "label": "Tracks Colour (Background)",
+        "messageKey": "BackgroundColor1",
+        "defaultValue": "0000AA"
+      },
+      {
+        "type": "color",
+        "label": "Background Shadow Colour",
+        "messageKey": "ShadowColor",
+        "defaultValue": "000000"
+      },
+      {
+        "type": "color",
+        "label": "Foreground Colour",
+        "messageKey": "FGColor",
+        "defaultValue": "0055AA"
+      },
+      {
+        "type": "color",
+        "label": "Foreground Shadow Colour",
+        "messageKey": "ShadowColor2",
+        "defaultValue": "0000AA"
+      },
+      {
+        "type": "color",
+        "label": "Digital Time Colour",
+        "messageKey": "TextColor1",
+        "defaultValue": "FFFF55"
+      },
+      {
+        "type": "color",
+        "label": "Bluetooth & QuietTime Icon Colour",
+        "messageKey": "BTQTColor",
+        "defaultValue": "000000"
+      },
+      {
+        "type": "color",
+        "label": "Major Tickmark Colour",
+        "messageKey": "MajorTickColor",
+        "defaultValue": "FF0055"
+      },
+      {
+        "type": "color",
+        "label": "Minor Tickmark Colour",
+        "messageKey": "MinorTickColor",
+        "defaultValue": "00FF00"
+      },
+      {
+        "type": "color",
+        "label": "Battery Colour",
+        "messageKey": "BatteryColor",
+        "defaultValue": "0055FF"
+      },
+      {
+        "type": "color",
+        "label": "Time Ball Back Colour",
+        "messageKey": "BallColor0",
+        "defaultValue": "000000"
+      },
+      {
+        "type": "color",
+        "label": "Time Ball Outer Edge Colour",
+        "messageKey": "BallColor3",
+        "defaultValue": "555555"
+      },
+      {
+        "type": "color",
+        "label": "Time Ball Middle Colour",
+        "messageKey": "BallColor2",
+        "defaultValue": "AAAAAA"
+      },
+      {
+        "type": "color",
+        "label": "Time Ball Inner/Highlight Colour",
+        "messageKey": "BallColor1",
+        "defaultValue": "FFFFFF"
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "capabilities": [
+      "BW"
+    ],
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Colours"
+      },
+      {
+        "type": "toggle",
+        "label": "Shadow on",
+        "messageKey": "ShadowOn",
+        "description": "Shows or hides background, foreground and time ball shadows",
+        "defaultValue": true
+      },
+      {
+        "type": "slider",
+        "messageKey": "ShadowOffset",
+        "defaultValue": 1,
+        "label": "Background Shadow Offset",
+        "min": -8,
+        "max": 8,
+        "step": 1
+      },
+      {
+        "type": "radiogroup",
+        "messageKey": "BWThemeSelect",
+        "defaultValue": "wh",
+        "label": "COLOUR THEME SELECT",
+        "options": [
+          {
+            "label": "White Foreground, Black Tracks",
+            "value": "wh"
+          },
+          {
+            "label": "Black Foreground, White Tracks",
+            "value": "bl"
+          },
+          {
+            "label": "Custom Colours",
+            "value": "cu"
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "defaultValue": "Custom Colours"
+      },
+      {
+        "type": "color",
+        "label": "Tracks Colour (Background)",
+        "messageKey": "BackgroundColor1",
+        "defaultValue": "000000",
+        "allowGray": false
+      },
+      {
+        "type": "color",
+        "label": "Background Shadow Colour",
+        "messageKey": "ShadowColor",
+        "defaultValue": "000000"
+      },
+      {
+        "type": "color",
+        "label": "Foreground Colour",
+        "messageKey": "FGColor",
+        "defaultValue": "000000"
+      },
+      {
+        "type": "color",
+        "label": "Foreground Shadow Colour",
+        "messageKey": "ShadowColor2",
+        "defaultValue": "FFFFFF"
+      },
+      {
+        "type": "color",
+        "label": "Text Colour",
+        "messageKey": "TextColor1",
+        "defaultValue": "FFFFFF",
+        "allowGray": true
+      },
+      {
+        "type": "color",
+        "label": "Bluetooth & QuietTime Icon Colour",
+        "messageKey": "BTQTColor",
+        "defaultValue": "000000"
+      },
+      {
+        "type": "color",
+        "label": "Major Tickmark Colour",
+        "messageKey": "MajorTickColor",
+        "defaultValue": "FFFFFF"
+      },
+      {
+        "type": "color",
+        "label": "Minor Tickmark Colour",
+        "messageKey": "MinorTickColor",
+        "defaultValue": "FFFFFF"
+      },
+      {
+        "type": "color",
+        "label": "Battery Colour",
+        "messageKey": "BatteryColor",
+        "defaultValue": "FFFFFF"
+      },
+      {
+        "type": "color",
+        "label": "Time Ball Back Colour",
+        "messageKey": "BallColor0",
+        "defaultValue": "000000",
+        "allowGray": true
+      },
+      {
+        "type": "color",
+        "label": "Time Ball Outer Edge Colour",
+        "messageKey": "BallColor3",
+        "defaultValue": "000000",
+        "allowGray": true
+      },
+      {
+        "type": "color",
+        "label": "Time Ball Middle Colour",
+        "messageKey": "BallColor2",
+        "defaultValue": "AAAAAA",
+        "allowGray": true
+      },
+      {
+        "type": "color",
+        "label": "Time Ball Inner/Highlight Colour",
+        "messageKey": "BallColor1",
+        "defaultValue": "FFFFFF",
+        "allowGray": true
+      }
+    ]
+  },
+  {
+    "type": "submit",
+    "defaultValue": "Save"
+  }
+]
