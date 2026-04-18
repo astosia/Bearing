@@ -69,15 +69,45 @@ static AppTimer *s_weather_timeout_timer;
 
 static int s_countdown = 30;
 
+
 // ---------------------------------------------------------------------------
-// Ball animation state — all angles in degrees
+// gravity mode setup — not yet on Aplite
 // ---------------------------------------------------------------------------
-#define ANIM_TIMER_MS       50          // ~20fps
+#ifndef PBL_PLATFORM_APLITE
+  static int64_t s_last_tap_time = 0;  // ms relative to app start; 0 = no first tap recorded
+  static int64_t s_app_start_ms = 0;   // set in prv_init, used to keep tap timestamps small
+  static bool s_gravity_mode = false;
+  static int sensitivty;
+
+  #define DOUBLE_TAP_MIN_MS  100   // ignore if taps arrive faster than this (single-shake noise)
+  #define DOUBLE_TAP_MAX_MS  800   // second tap must arrive within this window
+
+  typedef struct {
+    int32_t angle;     // 0 to TRIG_MAX_ANGLE
+    int32_t velocity;  // Angular velocity
+    int16_t radius;    // radius of the track
+  } TrackBall;
+
+  static TrackBall s_hour_ball, s_minute_ball;
+  static AppTimer *s_physics_timer;
+  static AppTimer *s_gravity_timeout_timer;
+  static AppTimer *s_return_timer;
+  static bool s_returning = false;
+  #define TICK_MS             33        // 33ms = ~30fps for all animations
+  #define RETURN_STEPS        3         // move smoothly back to the time
+#else
+  #define TICK_MS             33        // 33ms = ~30fps for startup animation (Aplite)
+#endif // PBL_PLATFORM_APLITE
+
+// ---------------------------------------------------------------------------
+// Ball animation on startup — all angles in degrees
+// ---------------------------------------------------------------------------
+#define ANIM_TIMER_MS       TICK_MS     // 33m = ~30fps
 #define ANIM_TOTAL_DEG      720         // 2 full rotations =720
 #define ANIM_ACCEL_DEG      60          // ease-in over first quarter rotation
 #define ANIM_DECEL_DEG      60         // ease-out over final full rotation
-// Full speed: 1 lap (360°) per 1500ms, at 50ms per tick = 12° per tick
-#define ANIM_FULL_DEG_TICK  12
+// Full speed: 1 lap (360) per 1.5s, at 50ms per tick = 12 degrees per tick
+#define ANIM_FULL_DEG_TICK  12  //was 12 when 50ms
 
 static bool s_anim_active = false;
 static int32_t s_anim_angle_offset = 0;   // degrees travelled so far
@@ -353,7 +383,7 @@ static void battery_callback(BatteryChargeState state) {
 }
 
 // ---------------------------------------------------------------------------
-// Tick & analogue hands drawing
+// Tick & time balls drawing
 // ---------------------------------------------------------------------------
 
 static void draw_major_tick(GContext *ctx, int angle, int length, GColor fill_color, GColor border_color) {
@@ -437,6 +467,10 @@ static void prv_default_settings(void) {
   settings.BatteryArc = false;
   settings.HoursCentre = true;
   settings.AnimOn = true;
+  settings.GravityModeOn = true;
+  settings.GravModeTimeout = 10;  // seconds before balls return to clock
+  settings.FrictionVal = 82;      // damping per tick (82 = retain 82% velocity)
+  settings.SensitivityVal = 10;   // sensitivity multiplier (lower = more reactive)
   #if PBL_COLOR
       settings.ShadowOn = true;
       settings.FGColor = GColorCobaltBlue;
@@ -564,6 +598,187 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
 
 }
 
+///gravity mode handlers
+#ifndef PBL_PLATFORM_APLITE
+static void update_ball_physics(TrackBall *ball, int16_t ax, int16_t ay, int32_t sensitivity) {
+    // Gavity vectors. Pebble accel is ~ -1000 to 1000.
+    int32_t gx = ax; 
+    int32_t gy = -ay; // Invert Y for screen coordinates
+
+    // 2. Calculate acceleration using Pebble's lookup tables
+    // Formula: acc = (-gx * sin(theta) + gy * cos(theta))
+    int32_t sin_th = sin_lookup(ball->angle);
+    int32_t cos_th = cos_lookup(ball->angle);
+
+    // Divide by a large number (e.g., 5000) to "tame" the speed
+    int32_t acceleration = (-gx * sin_th + gy * cos_th) / sensitivity;  //was 8000
+
+    // Update velocity with friction
+    ball->velocity = ((ball->velocity + acceleration) * settings.FrictionVal) / 100;
+
+    // Update angle (Wrap-around is handled automatically by uint16 casting if needed, 
+    // but here we just let it accumulate)
+    ball->angle += ball->velocity;
+}
+
+
+static void physics_timer_callback(void *context); 
+
+// Stop grav mode and return balls to their clock positions
+static void stop_gravity_mode() {
+    s_gravity_mode = false;
+    s_returning    = false;
+
+    if (s_physics_timer) {
+        app_timer_cancel(s_physics_timer);
+        s_physics_timer = NULL;
+    }
+    if (s_gravity_timeout_timer) {
+        app_timer_cancel(s_gravity_timeout_timer);
+        s_gravity_timeout_timer = NULL;
+    }
+    if (s_return_timer) {
+        app_timer_cancel(s_return_timer);
+        s_return_timer = NULL;
+    }
+
+    layer_mark_dirty(s_canvas_layer);
+    #ifdef DEBUG
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Gravity mode stopped");
+    #endif
+}
+
+// Shortest distance in TRIG_MAX_ANGLE space
+static int32_t angle_diff(int32_t from, int32_t to) {
+    int32_t d = (to - from) % TRIG_MAX_ANGLE;
+    if (d >  TRIG_MAX_ANGLE / 2) d -= TRIG_MAX_ANGLE;
+    if (d < -TRIG_MAX_ANGLE / 2) d += TRIG_MAX_ANGLE;
+    return d;
+}
+
+static int32_t current_hour_target() {
+    int32_t a = (((prv_tick_time.tm_hour % 12) * TRIG_MAX_ANGLE) / 12)
+              + ((prv_tick_time.tm_min * TRIG_MAX_ANGLE) / (12 * 60))
+              - TRIG_MAX_ANGLE / 4;
+    return ((a % TRIG_MAX_ANGLE) + TRIG_MAX_ANGLE) % TRIG_MAX_ANGLE;
+}
+static int32_t current_minute_target() {
+    int32_t a = (prv_tick_time.tm_min * TRIG_MAX_ANGLE) / 60
+              - TRIG_MAX_ANGLE / 4;
+    return ((a % TRIG_MAX_ANGLE) + TRIG_MAX_ANGLE) % TRIG_MAX_ANGLE;
+}
+
+// Called at RETURN_TICK_MS — shifts balls toward their clock targets
+static void return_tick_handler(void *context) {
+    s_return_timer = NULL;
+
+    int32_t hour_target   = current_hour_target();
+    int32_t minute_target = current_minute_target();
+
+    int32_t hour_delta   = angle_diff(s_hour_ball.angle,   hour_target);
+    int32_t minute_delta = angle_diff(s_minute_ball.angle, minute_target);
+
+    // Move 1/8th of remaining distance each tick — exponential ease-out
+    s_hour_ball.angle   += hour_delta   >> RETURN_STEPS;
+    s_minute_ball.angle += minute_delta >> RETURN_STEPS;
+
+    layer_mark_dirty(s_canvas_layer);
+
+    // Threshold: ~0.5° in TRIG_MAX_ANGLE units (65536 / 720 ≈ 91)
+    bool hour_done   = (hour_delta   > -91 && hour_delta   < 91);
+    bool minute_done = (minute_delta > -91 && minute_delta < 91);
+
+    if (hour_done && minute_done) {
+        // Snap exactly onto target then fully exit gravity mode
+        s_hour_ball.angle   = hour_target;
+        s_minute_ball.angle = minute_target;
+        layer_mark_dirty(s_canvas_layer);
+        stop_gravity_mode();
+    } else {
+        s_return_timer = app_timer_register(TICK_MS, return_tick_handler, NULL);
+    }
+}
+
+// Fired after timeout — stop physics and begin rolling balls back to the clock
+static void gravity_timeout_handler(void *context) {
+    s_gravity_timeout_timer = NULL;
+    s_returning = true;
+
+    // Stop physics loop — lerp takes over from here
+    if (s_physics_timer) {
+        app_timer_cancel(s_physics_timer);
+        s_physics_timer = NULL;
+    }
+    s_hour_ball.velocity   = 0;
+    s_minute_ball.velocity = 0;
+
+    s_return_timer = app_timer_register(TICK_MS, return_tick_handler, NULL);
+    #ifdef DEBUG
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Gravity timeout: rolling back to clock");
+    #endif
+}
+
+static void start_gravity_mode() {
+    time_t temp = time(NULL);
+    struct tm *t = localtime(&temp);
+
+    // Convert time to Pebble's TRIG_MAX_ANGLE space, with the -TRIG_MAX_ANGLE/4
+    // offset equivalent to the -90° used in the degree-based clock drawing.
+    int32_t ha = (((t->tm_hour % 12) * TRIG_MAX_ANGLE) / 12)
+               + ((t->tm_min        * TRIG_MAX_ANGLE) / (12 * 60))
+               - TRIG_MAX_ANGLE / 4;
+    s_hour_ball.angle = ((ha % TRIG_MAX_ANGLE) + TRIG_MAX_ANGLE) % TRIG_MAX_ANGLE;
+
+    int32_t ma = (t->tm_min * TRIG_MAX_ANGLE) / 60
+               - TRIG_MAX_ANGLE / 4;
+    s_minute_ball.angle = ((ma % TRIG_MAX_ANGLE) + TRIG_MAX_ANGLE) % TRIG_MAX_ANGLE;
+
+    s_hour_ball.velocity = 0;
+    s_minute_ball.velocity = 0;
+    
+    // Set track radii based on your Bearing design
+    s_hour_ball.radius = config.hour_ball_track_radius; 
+    s_minute_ball.radius = config.minute_ball_track_radius;
+
+    // Start the physics animation loop
+    if (s_physics_timer) {
+        app_timer_cancel(s_physics_timer);
+    }
+    s_physics_timer = app_timer_register(TICK_MS, physics_timer_callback, NULL);
+
+    // Arm the timeout — return to clock after user-configured duration
+    if (s_gravity_timeout_timer) {
+        app_timer_cancel(s_gravity_timeout_timer);
+    }
+    uint32_t timeout_ms = (uint32_t)(settings.GravModeTimeout > 0 ? settings.GravModeTimeout : 10) * 1000;
+    s_gravity_timeout_timer = app_timer_register(timeout_ms, gravity_timeout_handler, NULL);
+}
+
+
+// Physics timer: reads accelerometer, steps physics, redraws
+static void physics_timer_callback(void *context) {
+    s_physics_timer = NULL;
+
+    if (!s_gravity_mode || !settings.GravityModeOn) {
+        return;
+    }
+
+    // Sample accelerometer
+    AccelData accel;
+    accel_service_peek(&accel);
+
+    // SensitivityVal scales the divisor: slider range 6-12 maps to 0.6x-1.2x of base values.
+    // At default of 10 behaviour is identical to hardcoded 6000/10000.
+    update_ball_physics(&s_hour_ball,   accel.x, accel.y, 6000  * settings.SensitivityVal / 10);
+    update_ball_physics(&s_minute_ball, accel.x, accel.y, 10000 * settings.SensitivityVal / 10);
+
+    layer_mark_dirty(s_canvas_layer);
+
+    // Reschedule
+    s_physics_timer = app_timer_register(TICK_MS, physics_timer_callback, NULL);
+}
+#endif // PBL_PLATFORM_APLITE
+
 static void update_weather_view_visibility() {
  // If UseWeather was just turned off, force the view back to main (0)
   if (!settings.UseWeather) {
@@ -642,6 +857,42 @@ static void anim_timer_callback(void *context) {
 
 //// Shake/tap events, relate only to weather, TO DO
 static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
+
+  #ifndef PBL_PLATFORM_APLITE
+  if(settings.GravityModeOn){
+   
+    // ms since app launch — subtract start offset so values stay small and readable
+    time_t tap_s;
+    uint16_t tap_ms;
+    tap_ms = (uint16_t)time_ms(&tap_s, NULL);
+    int64_t now = (int64_t)tap_s * 1000 + tap_ms - s_app_start_ms;
+    int64_t gap = now - s_last_tap_time;
+
+    #ifdef DEBUG
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "tap: gap=%dms", (int)gap);
+    #endif
+
+    if (gap >= DOUBLE_TAP_MIN_MS && gap <= DOUBLE_TAP_MAX_MS) {
+      // Valid double-tap — gap long enough to be intentional, short enough to be deliberate
+      #ifdef DEBUG
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "Gravity: double tap registered (gap=%dms)", (int)gap);
+      #endif
+      if (s_gravity_mode) {
+        stop_gravity_mode();
+      } else {
+        s_gravity_mode = true;
+        start_gravity_mode();
+      }
+      s_last_tap_time = 0; // Reset so a 3rd tap doesn't re-trigger
+    } else if (gap > DOUBLE_TAP_MAX_MS) {
+      // Too slow — treat as first tap of a new sequence
+      s_last_tap_time = now;
+    }
+    // gap < DOUBLE_TAP_MIN_MS: arrived too fast, almost certainly noise — ignore entirely
+
+  }
+  #endif // PBL_PLATFORM_APLITE
+
 
   #ifdef DEBUG
     APP_LOG(APP_LOG_LEVEL_DEBUG, "accel tap registered");
@@ -767,6 +1018,12 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *battery_arc_t        = dict_find(iter, MESSAGE_KEY_BatteryArc);
   Tuple *hourcentre_t         = dict_find(iter, MESSAGE_KEY_HoursCentre);
   Tuple *anim_t               = dict_find(iter, MESSAGE_KEY_AnimOn);
+  #ifndef PBL_PLATFORM_APLITE
+  Tuple *grav_t               = dict_find(iter, MESSAGE_KEY_GravityModeOn);
+  Tuple *gravtimeout_t        = dict_find(iter, MESSAGE_KEY_GravModeTimeout);
+  Tuple *friction_t           = dict_find(iter, MESSAGE_KEY_FrictionVal);
+  Tuple *sensitivity_t        = dict_find(iter, MESSAGE_KEY_SensitivityVal);
+  #endif
   Tuple *shadowon_t           = dict_find(iter, MESSAGE_KEY_ShadowOn);
   Tuple *shadowoffset_t       = dict_find(iter, MESSAGE_KEY_ShadowOffset);
 
@@ -816,13 +1073,48 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
   if (useweather_t) {
     settings.UseWeather = useweather_t->value->int32 != 0;
-    if(settings.UseWeather){
-      accel_tap_service_subscribe(accel_tap_handler); 
-      #ifdef DEBUG
-        APP_LOG(APP_LOG_LEVEL_DEBUG, "accel subscribed weather on");
-      #endif
+    settings_changed = true;
+  }
+
+  #ifndef PBL_PLATFORM_APLITE
+  if (grav_t) {
+    settings.GravityModeOn = grav_t->value->int32 == 1;
+    // If gravity mode was just turned off, stop any running physics
+    if (!settings.GravityModeOn && s_gravity_mode) {
+      stop_gravity_mode();
     }
     settings_changed = true;
+  }
+
+  if (gravtimeout_t) {
+    settings.GravModeTimeout = (int)gravtimeout_t->value->int32;
+    settings_changed = true;
+  }
+
+  if (friction_t) {
+    settings.FrictionVal = (int)friction_t->value->int32;
+    settings_changed = true;
+  }
+
+  if (sensitivity_t) {
+    settings.SensitivityVal = (int)sensitivity_t->value->int32;
+    settings_changed = true;
+  }
+  #endif // PBL_PLATFORM_APLITE
+
+  // check accel sub when weather or gravity settings change
+  if (settings.UseWeather
+    #ifndef PBL_PLATFORM_APLITE
+    || settings.GravityModeOn
+    #endif
+  ) {
+    accel_tap_service_subscribe(accel_tap_handler);
+    #ifdef DEBUG
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "accel subscribed (weather=%d, gravity=%d)",
+              (int)settings.UseWeather, (int)settings.GravityModeOn);
+    #endif
+  } else {
+    accel_tap_service_unsubscribe();
   }
 
   if (addzero12_t) {
@@ -885,7 +1177,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
     settings_changed = true;
   }
 
-///Weather data
+
 
   if (wtemp_t){
   snprintf(settings.tempstring, sizeof(settings.tempstring), "%s", wtemp_t -> value -> cstring);
@@ -1573,6 +1865,21 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
   (void)bounds;
 
+
+  #ifndef PBL_PLATFORM_APLITE
+  if(settings.GravityModeOn && (s_gravity_mode || s_returning)){
+    GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
+    // Convert TRIG_MAX_ANGLE space back to degrees for polar_to_point_offset
+    int hour_deg   = (int)(s_hour_ball.angle   * 360 / TRIG_MAX_ANGLE);
+    int minute_deg = (int)(s_minute_ball.angle * 360 / TRIG_MAX_ANGLE);
+    draw_hour_minute_balls(ctx, polar_to_point_offset(origin, hour_deg,   config.hour_ball_track_radius));
+    draw_hour_minute_balls(ctx, polar_to_point_offset(origin, minute_deg, config.minute_ball_track_radius));
+  }
+  else
+  #endif // PBL_PLATFORM_APLITE
+
+  {
+
   ///Draw the hour and minute balls
   minutes = prv_tick_time.tm_min;
   hours = prv_tick_time.tm_hour % 12;
@@ -1635,6 +1942,7 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
             GTextOverflowModeFill, GTextAlignmentCenter, NULL);
       }
       #endif
+    }
 
 }
 
@@ -2102,9 +2410,16 @@ static void prv_window_load(Window *window) {
 
   if (settings.UseWeather) {
     s_timeout_timer = app_timer_register(1000, weather_timeout_handler, NULL);
+  }
+  if (settings.UseWeather
+    #ifndef PBL_PLATFORM_APLITE
+    || settings.GravityModeOn
+    #endif
+  ) {
     accel_tap_service_subscribe(accel_tap_handler);
     #ifdef DEBUG
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "accel subscribed weather on, prv_window_load");
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "accel subscribed (weather=%d, gravity=%d), prv_window_load",
+              (int)settings.UseWeather, (int)settings.GravityModeOn);
     #endif
   }
   
@@ -2182,6 +2497,20 @@ static void prv_window_unload(Window *window) {
     app_timer_cancel(s_anim_timer);
     s_anim_timer = NULL;
   }
+  #ifndef PBL_PLATFORM_APLITE
+  if (s_physics_timer) {
+    app_timer_cancel(s_physics_timer);
+    s_physics_timer = NULL;
+  }
+  if (s_gravity_timeout_timer) {
+    app_timer_cancel(s_gravity_timeout_timer);
+    s_gravity_timeout_timer = NULL;
+  }
+  if (s_return_timer) {
+    app_timer_cancel(s_return_timer);
+    s_return_timer = NULL;
+  }
+  #endif // PBL_PLATFORM_APLITE
   if (s_weather_timeout_timer) {
     app_timer_cancel(s_weather_timeout_timer);
     s_weather_timeout_timer = NULL;
@@ -2219,6 +2548,14 @@ static void prv_window_unload(Window *window) {
 // ---------------------------------------------------------------------------
 
 static void prv_init(void) {
+  #ifndef PBL_PLATFORM_APLITE
+  // Capture app start time so tap timestamps are small relative values (ms since launch)
+  time_t start_s;
+  uint16_t start_ms;
+  start_ms = (uint16_t)time_ms(&start_s, NULL);
+  s_app_start_ms = (int64_t)start_s * 1000 + start_ms;
+  #endif // PBL_PLATFORM_APLITE
+
   prv_load_settings();
 
   s_countdown = settings.UpSlider;

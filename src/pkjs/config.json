@@ -1,7 +1,7 @@
 [
   {
     "type": "heading",
-    "defaultValue": "Hybrid"
+    "defaultValue": "Bearing"
   },
   {
     "type": "text",
@@ -19,6 +19,36 @@
         "label": "Startup Animation",
         "messageKey": "AnimOn",
         "defaultValue": true
+      },
+      {
+        "type": "toggle",
+        "label": "Gravity Mode",
+        "capabilities": ["MICROPHONE"],
+        "description": "If switched on, 2 shakes/taps less than 1 second apart will start (or stop) gravity mode",
+        "messageKey": "GravityModeOn",
+        "defaultValue": false
+      },
+      {
+        "type": "slider",
+        "label": "Gravity Mode Timeout",
+        "capabilities": ["MICROPHONE"],
+        "description": "Seconds gravity mode stays on",
+        "messageKey": "GravModeTimeout",
+        "defaultValue": 10,
+        "min": 5,
+        "max": 60,
+        "step": 5
+      },
+      {
+        "type": "slider",
+        "label": "Gravity Mode Friction",
+        "capabilities": ["MICROPHONE"],
+        "description": "Higher values = less friction (or mroe retained velocity). Default = 82",
+        "messageKey": "FrictionVal",
+        "defaultValue": 82,
+        "min": 30,
+        "max": 96,
+        "step": 2
       },
       {
         "type": "toggle",

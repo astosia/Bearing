@@ -1,7 +1,7 @@
 #pragma once
 #include <pebble.h>
 
-#define SETTINGS_KEY 124
+#define SETTINGS_KEY 1240
 
 typedef struct ClaySettings {
   bool EnableDate;
@@ -26,6 +26,10 @@ typedef struct ClaySettings {
   bool BatteryArc;
   bool HoursCentre;
   bool AnimOn;
+  bool GravityModeOn;
+  int GravModeTimeout;
+  int FrictionVal;
+  int SensitivityVal;
   bool ShadowOn;
   bool RemoveZero24h;
   bool AddZero12h;
