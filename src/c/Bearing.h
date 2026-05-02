@@ -1,7 +1,7 @@
 #pragma once
 #include <pebble.h>
 
-#define SETTINGS_KEY 1240
+#define SETTINGS_KEY 125
 
 typedef struct ClaySettings {
   bool EnableDate;
@@ -10,6 +10,8 @@ typedef struct ClaySettings {
   int Font;
   char BWThemeSelect[4];
   char ThemeSelect[4];
+  bool RectTracksOn;
+  bool MagnetsOn;
   GColor FGColor;
   GColor BackgroundColor1;
   GColor ShadowColor;

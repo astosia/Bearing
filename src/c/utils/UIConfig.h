@@ -42,6 +42,41 @@ typedef struct {
   int hourYoffset;
   int hourXoffset;
   int battery_line;
+
+  int16_t hour_ball_track_rect_w;
+  int16_t hour_ball_track_rect_h;
+  int16_t minute_ball_track_rect_w;
+  int16_t minute_ball_track_rect_h;
+  int16_t inner_ball_track_rect_corner_r;
+  int16_t outer_ball_track_rect_corner_r;
+
+  // Rect ring geometry  (≈ ball_track ± fg_ring_width/2)
+  int16_t inner_ring_rect_w;
+  int16_t inner_ring_rect_h;
+  int16_t outer_ring_rect_w;
+  int16_t outer_ring_rect_h;
+  int16_t inner_ring_rect_corner_r;
+  int16_t outer_ring_rect_corner_r;
+  int16_t inner_ring_rect_stroke;   // stroke width for inner ring in rect mode
+  int16_t outer_ring_rect_stroke;   // stroke width for outer ring in rect mode
+
+  int16_t time_ring_rect_corner_r;
+
+  // Rect centre geometry  (≈ fg_shadow_radius)
+  int16_t centre_rect_w;
+  int16_t centre_rect_h;
+  int16_t centre_rect_corner_r;
+
+  // Rect tick geometry  (same style as HybridToo)
+  int16_t majortickrect_w;
+  int16_t majortickrect_h;
+  int16_t corner_radius_majortickrect;
+  int16_t minortickrect_w;
+  int16_t minortickrect_h;
+  int16_t corner_radius_minortickrect;
+  int16_t tick_inset_outer_rect;
+
+  GRect BatterySideBarRect[1];
   
 } UIConfig;
 

@@ -63,7 +63,7 @@ static int s_hours;
 static int minutes;
 static int hours;
 static ClaySettings settings;
-static bool showSeconds;
+static bool showSeconds __attribute__((unused));
 static AppTimer *s_timeout_timer;
 static AppTimer *s_weather_timeout_timer;
 
@@ -74,18 +74,20 @@ static int s_countdown = 30;
 // gravity mode setup — not yet on Aplite
 // ---------------------------------------------------------------------------
 #ifndef PBL_PLATFORM_APLITE
-  static int64_t s_last_tap_time = 0;  // ms relative to app start; 0 = no first tap recorded
-  static int64_t s_app_start_ms = 0;   // set in prv_init, used to keep tap timestamps small
+  static int64_t s_last_tap_time = 0;  //ms relative to app start; 0 = no first tap recorded
+  static int64_t s_app_start_ms = 0;   //set in prv_init, used to keep tap timestamps small
   static bool s_gravity_mode = false;
-  static int sensitivty;
+  static int sensitivty __attribute__((unused));
 
-  #define DOUBLE_TAP_MIN_MS  100   // ignore if taps arrive faster than this (single-shake noise)
-  #define DOUBLE_TAP_MAX_MS  800   // second tap must arrive within this window
+  #define DOUBLE_TAP_MIN_MS  100 //ignore if taps arrive faster than this (trying to avoid single-shake noise)
+  #define DOUBLE_TAP_MAX_MS  800 //second tap must arrive within this window
 
   typedef struct {
-    int32_t angle;     // 0 to TRIG_MAX_ANGLE
-    int32_t velocity;  // Angular velocity
-    int16_t radius;    // radius of the track
+    int32_t angle; // 0 to TRIG_MAX_ANGLE (circular mode)
+    int32_t velocity; // velocity (angular for circle, perimeter-units*256 for rect)
+    int16_t radius; // radius of the track (circular mode)
+    int32_t pos;  // perimeter position fixed-point pixels*256 (rect mode)
+    bool snapped; // true when magnet has locked ball to current time
   } TrackBall;
 
   static TrackBall s_hour_ball, s_minute_ball;
@@ -93,19 +95,19 @@ static int s_countdown = 30;
   static AppTimer *s_gravity_timeout_timer;
   static AppTimer *s_return_timer;
   static bool s_returning = false;
-  #define TICK_MS             33        // 33ms = ~30fps for all animations
-  #define RETURN_STEPS        3         // move smoothly back to the time
+    #define TICK_MS    33 // 33ms = ~30fps for all animations
+    #define RETURN_STEPS  3  // move smoothly back to the time
 #else
-  #define TICK_MS             33        // 33ms = ~30fps for startup animation (Aplite)
-#endif // PBL_PLATFORM_APLITE
+    #define TICK_MS      33 // 33ms = ~30fps for startup animation (Aplite)
+#endif 
 
 // ---------------------------------------------------------------------------
 // Ball animation on startup — all angles in degrees
 // ---------------------------------------------------------------------------
-#define ANIM_TIMER_MS       TICK_MS     // 33m = ~30fps
-#define ANIM_TOTAL_DEG      720         // 2 full rotations =720
-#define ANIM_ACCEL_DEG      60          // ease-in over first quarter rotation
-#define ANIM_DECEL_DEG      60         // ease-out over final full rotation
+#define ANIM_TIMER_MS       TICK_MS 
+#define ANIM_TOTAL_DEG      720     // 2 full rotations =720
+#define ANIM_ACCEL_DEG      60      // ease-in over first quarter rotation
+#define ANIM_DECEL_DEG      60      // ease-out over final full rotation
 // Full speed: 1 lap (360) per 1.5s, at 50ms per tick = 12 degrees per tick
 #define ANIM_FULL_DEG_TICK  12  //was 12 when 50ms
 
@@ -157,8 +159,42 @@ const UIConfig __attribute__((section(".rodata"))) config = {
 
   .hourXoffset = 1,
   .hourYoffset = -2,
-  .battery_line = 3
+  .battery_line = 3,
 
+  .hour_ball_track_rect_w    = 35 + 9 -1, //32 + 22,   // half-width  of inner (hour) rounded-rect track
+  .hour_ball_track_rect_h    = 49 + 9-1, //46 + 22,   // half-height of inner (hour) rounded-rect track
+  .minute_ball_track_rect_w  = 71 + 5 + 1 + 9 - 2,   // half-width  of outer (minute) rounded-rect track
+  .minute_ball_track_rect_h  = 85 + 5 + 1 + 9 - 2,   // half-height of outer (minute) rounded-rect track
+  .inner_ball_track_rect_corner_r  = 10,   // corner radius for both tracks
+  .outer_ball_track_rect_corner_r = 40,
+
+  // Rect ring geometry  (≈ ball_track ± fg_ring_width/2)
+  .inner_ring_rect_w         = 50 + 5 + 9, //53 + 10,  //was 44
+  .inner_ring_rect_h         = 64 + 5 + 9, //67 + 10,  //was 57
+  .outer_ring_rect_w         = 81 + 5 + 10 + 5 + 2 + 9,
+  .outer_ring_rect_h         = 95 + 5 + 10 + 5 + 2 + 9,
+  .inner_ring_rect_corner_r  = 24,  //was 24
+  .outer_ring_rect_corner_r  = 64,  //was 64
+  .inner_ring_rect_stroke    = 10 + 10,  //was 5
+  .outer_ring_rect_stroke    = 5 + 20 + 10,
+
+  .time_ring_rect_corner_r  = 26,  //was 26
+
+  // Rect centre geometry  (≈ fg_shadow_radius)
+  .centre_rect_w             = 26 + 9 - 2,  //was28
+  .centre_rect_h             = 40 + 9 - 2,  //was 28
+  .centre_rect_corner_r      = 8,  //was 8
+
+  // Rect tick geometry  (same style as HybridToo)
+  .majortickrect_w           = 86 + 5,
+  .majortickrect_h           = 100 + 5,
+  .corner_radius_majortickrect = 43,  //was 20
+  .minortickrect_w           = 90 + 5,
+  .minortickrect_h           = 104 + 5,
+  .corner_radius_minortickrect = 47,  //was 28
+  .tick_inset_outer_rect     = -4,
+
+  .BatterySideBarRect = {{{189,50},{3,128}}}  //sidebar used on rectangular mode only
   //.testRect = {{{0,0},{200,228}}},  //reminder of format for including rect co-orindinates in this struct, this would be a full screen emery rect
 
 };
@@ -287,7 +323,43 @@ const UIConfig __attribute__((section(".rodata"))) config = {
 
   .hourXoffset = 1,
   .hourYoffset = -1,
-  .battery_line = 2
+  .battery_line = 2,
+
+  // Rect track geometry
+  .hour_ball_track_rect_w = 31,
+  .hour_ball_track_rect_h = 42,
+  .minute_ball_track_rect_w = 60,
+  .minute_ball_track_rect_h = 72,
+  .inner_ball_track_rect_corner_r = 7,
+  .outer_ball_track_rect_corner_r = 29,
+
+  // Rect ring geometry
+  .inner_ring_rect_w = 46,
+  .inner_ring_rect_h = 57,
+  .outer_ring_rect_w = 81,
+  .outer_ring_rect_h = 93,
+  .inner_ring_rect_corner_r = 17,
+  .outer_ring_rect_corner_r = 47,
+  .inner_ring_rect_stroke = 15,
+  .outer_ring_rect_stroke = 25,
+  .time_ring_rect_corner_r = 18,
+
+  // Rect centre geometry
+  .centre_rect_w = 24,
+  .centre_rect_h = 35,
+  .centre_rect_corner_r = 6,
+
+  // Rect tick geometry
+  .majortickrect_w = 66+2,
+  .majortickrect_h = 77+2,
+  .corner_radius_majortickrect = 31,
+  .minortickrect_w = 68+1,
+  .minortickrect_h = 80+1,
+  .corner_radius_minortickrect = 34,
+  .tick_inset_outer_rect = -4,
+
+  .BatterySideBarRect = {{{136,37},{2,94}}}
+
 };
 #else // Basalt
 const UIConfig __attribute__((section(".rodata"))) config = {
@@ -297,7 +369,7 @@ const UIConfig __attribute__((section(".rodata"))) config = {
   .QTIconXOffset = 0,
  
   .hour_font_size = 28, //38
-  .minute_font_size = 16,
+  .minute_font_size = 14,
   .other_text_font_size = 10,
 
   .tick_inset_inner = 9, //was 14
@@ -328,7 +400,42 @@ const UIConfig __attribute__((section(".rodata"))) config = {
 
   .hourXoffset = 1,
   .hourYoffset = 0,
-  .battery_line = 2
+  .battery_line = 2,
+
+  // Rect track geometry
+  .hour_ball_track_rect_w = 31,
+  .hour_ball_track_rect_h = 42,
+  .minute_ball_track_rect_w = 60,
+  .minute_ball_track_rect_h = 72,
+  .inner_ball_track_rect_corner_r = 7,
+  .outer_ball_track_rect_corner_r = 29,
+
+  // Rect ring geometry
+  .inner_ring_rect_w = 46,
+  .inner_ring_rect_h = 57,
+  .outer_ring_rect_w = 81,
+  .outer_ring_rect_h = 93,
+  .inner_ring_rect_corner_r = 17,
+  .outer_ring_rect_corner_r = 47,
+  .inner_ring_rect_stroke = 15,
+  .outer_ring_rect_stroke = 25,
+  .time_ring_rect_corner_r = 18,
+
+  // Rect centre geometry
+  .centre_rect_w = 24,
+  .centre_rect_h = 35,
+  .centre_rect_corner_r = 6,
+
+  // Rect tick geometry
+  .majortickrect_w = 66+2,
+  .majortickrect_h = 77+2,
+  .corner_radius_majortickrect = 31,
+  .minortickrect_w = 68+1,
+  .minortickrect_h = 80+1,
+  .corner_radius_minortickrect = 34,
+  .tick_inset_outer_rect = -4,
+
+  .BatterySideBarRect = {{{136,37},{2,94}}}
 };
 #endif
 
@@ -386,6 +493,16 @@ static void battery_callback(BatteryChargeState state) {
 // Tick & time balls drawing
 // ---------------------------------------------------------------------------
 
+
+/// Rectangular track 
+#ifndef PBL_ROUND
+static GPoint ball_point_on_rect_track(int angle_deg, int16_t half_w, int16_t half_h, int16_t corner_r) {
+    GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
+    return angle_to_rounded_rect_edge(origin, angle_deg, half_w, half_h, corner_r);
+}
+
+#endif
+
 static void draw_major_tick(GContext *ctx, int angle, int length, GColor fill_color, GColor border_color) {
   GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
   GPoint p1;
@@ -395,20 +512,67 @@ static void draw_major_tick(GContext *ctx, int angle, int length, GColor fill_co
    p1 = polar_to_point_offset(origin, angle, bounds.size.h / 2 - config.tick_inset_inner);
    p2 = polar_to_point_offset(origin, angle, bounds.size.h / 2 - config.tick_inset_outer);
   
+    graphics_context_set_antialiased(ctx, true);
+    graphics_context_set_stroke_color(ctx, border_color);
+    graphics_context_set_stroke_width(ctx, 3);
+    graphics_draw_line(ctx, p1, p2);
+}
+
+
+static void draw_minor_tick(GContext *ctx, GPoint center, GColor border_color) {
+  //minor tick is a circle
+  graphics_context_set_antialiased(ctx, true);
+  graphics_context_set_fill_color(ctx, border_color);
+  graphics_fill_circle(ctx, center, 1);
+}
+
+
+// ---------------------------------------------------------------------------
+// Tick drawing — rectangular mode (HybridToo style, rect watches only)
+// ---------------------------------------------------------------------------
+#ifndef PBL_ROUND
+static void draw_major_tick_rect(GContext *ctx, int angle, GColor border_color) {
+  GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
+  GRect r = GRect(0, 0, bounds.size.w, bounds.size.h);
+
+  // outer point: screen edge minus small inset
+  GPoint edge = angle_to_rect_edge(origin, angle, r);
+  int32_t dx = cos_lookup(DEG_TO_TRIGANGLE(angle));
+  int32_t dy = sin_lookup(DEG_TO_TRIGANGLE(angle));
+  GPoint p2 = GPoint(edge.x - (int)((dx * config.tick_inset_outer_rect) / TRIG_MAX_ANGLE),
+                     edge.y - (int)((dy * config.tick_inset_outer_rect) / TRIG_MAX_ANGLE));
+  // inner point: on the major-tick rounded rect
+  GPoint p1 = angle_to_rounded_rect_edge(origin, angle,
+                  config.majortickrect_w, config.majortickrect_h,
+                  config.corner_radius_majortickrect);
+
   graphics_context_set_antialiased(ctx, true);
   graphics_context_set_stroke_color(ctx, border_color);
   graphics_context_set_stroke_width(ctx, 3);
   graphics_draw_line(ctx, p1, p2);
 }
 
-
-static void draw_minor_tick(GContext *ctx, GPoint center, GColor border_color) {
-  //minor tick is a circle
+static void draw_minor_tick_rect(GContext *ctx, int angle, GColor border_color) {
   GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
+  GRect r = GRect(0, 0, bounds.size.w, bounds.size.h);
+
+  // outer point: screen edge minus small inset
+  GPoint edge = angle_to_rect_edge(origin, angle, r);
+  int32_t dx = cos_lookup(DEG_TO_TRIGANGLE(angle));
+  int32_t dy = sin_lookup(DEG_TO_TRIGANGLE(angle));
+  GPoint p2 = GPoint(edge.x - (int)((dx * config.tick_inset_outer_rect) / TRIG_MAX_ANGLE),
+                     edge.y - (int)((dy * config.tick_inset_outer_rect) / TRIG_MAX_ANGLE));
+  // inner point: on the minor-tick rounded rect
+  GPoint p1 = angle_to_rounded_rect_edge(origin, angle,
+                config.minortickrect_w, config.minortickrect_h,
+                config.corner_radius_minortickrect);
+
   graphics_context_set_antialiased(ctx, true);
-  graphics_context_set_fill_color(ctx, border_color);
-  graphics_fill_circle(ctx, center, 1);
+  graphics_context_set_stroke_color(ctx, border_color);
+  graphics_context_set_stroke_width(ctx, 1);
+  graphics_draw_line(ctx, p1, p2);
 }
+#endif // !PBL_ROUND
 
 
 static void draw_hour_minute_balls(GContext *ctx, GPoint center) {
@@ -417,30 +581,31 @@ static void draw_hour_minute_balls(GContext *ctx, GPoint center) {
   
   ////draw shadow on time markers
     graphics_context_set_fill_color(ctx, settings.ShadowColor);
-    GPoint center_offset = GPoint(center.x + PBL_IF_BW_ELSE (settings.ShadowOffset,settings.ShadowOffset - 3), center.y + PBL_IF_BW_ELSE (settings.ShadowOffset,settings.ShadowOffset - 3));
-    graphics_fill_circle(ctx, center_offset, config.ball_radius_outer);
+      GPoint center_offset = GPoint(center.x + PBL_IF_BW_ELSE (settings.ShadowOffset,settings.ShadowOffset - 3), center.y + PBL_IF_BW_ELSE (settings.ShadowOffset,settings.ShadowOffset - 3));
+      graphics_fill_circle(ctx, center_offset, config.ball_radius_outer);
 
   ///draw back layer of balls
-  graphics_context_set_fill_color(ctx, settings.BallColor0);
-  graphics_fill_circle(ctx, center, config.ball_radius_outer);
+    graphics_context_set_fill_color(ctx, settings.BallColor0);
+    graphics_fill_circle(ctx, center, config.ball_radius_outer);
 
   //draw outer layer of balls
-  graphics_context_set_fill_color(ctx, settings.BallColor3);
-  GPoint center_less_ball_offset_3 = GPoint(center.x - config.ball_offset3, center.y - config.ball_offset3);
-  graphics_fill_circle(ctx, center_less_ball_offset_3, config.ball_radius_3);
+    graphics_context_set_fill_color(ctx, settings.BallColor3);
+      GPoint center_less_ball_offset_3 = GPoint(center.x - config.ball_offset3, center.y - config.ball_offset3);
+      graphics_fill_circle(ctx, center_less_ball_offset_3, config.ball_radius_3);
 
   //draw middle layer of balls
-  graphics_context_set_fill_color(ctx, settings.BallColor2);
-  GPoint center_less_ball_offset_2 = GPoint(center.x - config.ball_offset2, center.y - config.ball_offset2);
-  graphics_fill_circle(ctx, center_less_ball_offset_2, config.ball_radius_2);
+    graphics_context_set_fill_color(ctx, settings.BallColor2);
+      GPoint center_less_ball_offset_2 = GPoint(center.x - config.ball_offset2, center.y - config.ball_offset2);
+      graphics_fill_circle(ctx, center_less_ball_offset_2, config.ball_radius_2);
 
   //draw front layer of balls
-  graphics_context_set_fill_color(ctx, settings.BallColor1);
-  GPoint center_less_ball_offset_1 = GPoint(center.x - config.ball_offset1, center.y - config.ball_offset1);
-  graphics_fill_circle(ctx, center_less_ball_offset_1, config.ball_radius_1);
+    graphics_context_set_fill_color(ctx, settings.BallColor1);
+      GPoint center_less_ball_offset_1 = GPoint(center.x - config.ball_offset1, center.y - config.ball_offset1);
+      graphics_fill_circle(ctx, center_less_ball_offset_1, config.ball_radius_1);
   
 }
 
+/// calculate co-ordinate of the centre point on a circle at a given angle, used in the fctx/non-aplite hours/minutes to put the bearings on the tracks
 #ifndef PBL_PLATFORM_APLITE
   static inline FPoint clockToCartesian(FPoint center, fixed_t radius, int32_t angle) {
       FPoint pt;
@@ -467,10 +632,12 @@ static void prv_default_settings(void) {
   settings.BatteryArc = false;
   settings.HoursCentre = true;
   settings.AnimOn = true;
-  settings.GravityModeOn = true;
+  settings.GravityModeOn = false;
+  settings.MagnetsOn = false;
+  settings.RectTracksOn = false;
   settings.GravModeTimeout = 10;  // seconds before balls return to clock
   settings.FrictionVal = 82;      // damping per tick (82 = retain 82% velocity)
-  settings.SensitivityVal = 10;   // sensitivity multiplier (lower = more reactive)
+  settings.SensitivityVal = 9;   // sensitivity multiplier (lower = more reactive)
   #if PBL_COLOR
       settings.ShadowOn = true;
       settings.FGColor = GColorCobaltBlue;
@@ -571,7 +738,7 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     minutes = tick_time->tm_min;
     hours = tick_time->tm_hour % 12;
     s_hours = tick_time->tm_hour;
-    layer_mark_dirty(s_canvas_layer);  //analogue hands
+    layer_mark_dirty(s_canvas_layer);  //layer for analogue "hands"/bearings
     layer_mark_dirty(s_fg_layer);      //digital time 
     //layer_mark_dirty(s_weather_layer_1);  //to do
   
@@ -598,29 +765,94 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
 
 }
 
-///gravity mode handlers
+///gravity mode handlers 
+// round faces
 #ifndef PBL_PLATFORM_APLITE
 static void update_ball_physics(TrackBall *ball, int16_t ax, int16_t ay, int32_t sensitivity) {
-    // Gavity vectors. Pebble accel is ~ -1000 to 1000.
+    // Gravity vectors. Pebble accel is -4000 to 4000
     int32_t gx = ax; 
-    int32_t gy = -ay; // Invert Y for screen coordinates
+    int32_t gy = -ay; // Invert Y for screen coordinates!
 
-    // 2. Calculate acceleration using Pebble's lookup tables
-    // Formula: acc = (-gx * sin(theta) + gy * cos(theta))
     int32_t sin_th = sin_lookup(ball->angle);
     int32_t cos_th = cos_lookup(ball->angle);
 
-    // Divide by a large number (e.g., 5000) to "tame" the speed
-    int32_t acceleration = (-gx * sin_th + gy * cos_th) / sensitivity;  //was 8000
+    // Tangential component — correct physics for a circular track.
+    int32_t acceleration = (-gx * sin_th + gy * cos_th) / sensitivity;
+
+    // Dead-zone fix: when the ball is at a position where the tangential component is near zero (e.g. 3/9 o'clock with a purely horizontal tilt), add a nudge
+      int32_t radial = (gx * cos_th + gy * sin_th) / (sensitivity * 8);
+       acceleration += radial;
 
     // Update velocity with friction
     ball->velocity = ((ball->velocity + acceleration) * settings.FrictionVal) / 100;
 
-    // Update angle (Wrap-around is handled automatically by uint16 casting if needed, 
-    // but here we just let it accumulate)
     ball->angle += ball->velocity;
 }
 
+// Rect faces
+
+static int32_t prv_rect_perimeter(int16_t hw, int16_t hh, int16_t cr) {
+    int32_t corner_arc = (157 * cr) / 100;
+      return (2 * 2 * (hw - cr) + 2 * 2 * (hh - cr) + 4 * corner_arc) * 256;
+}
+
+static int prv_pos_to_polar_deg(int32_t pos, int16_t hw, int16_t hh, int16_t cr) {
+    int32_t total = prv_rect_perimeter(hw, hh, cr);
+      if (total <= 0) return -90;
+        pos = ((pos % total) + total) % total;
+      return (int)((pos * 360) / total) - 90;
+}
+
+static int32_t prv_angle_to_pos(int32_t trig_angle, int16_t hw, int16_t hh, int16_t cr) {
+
+    int clock_deg = ((int)(trig_angle * 360 / TRIG_MAX_ANGLE) + 90 + 360) % 360;
+      return (int32_t)(clock_deg) * prv_rect_perimeter(hw, hh, cr) / 360;
+
+  }
+
+static GPoint prv_ball_point_from_pos(int32_t pos, int16_t hw, int16_t hh, int16_t cr) {
+
+    GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
+
+      return angle_to_rounded_rect_edge(origin, prv_pos_to_polar_deg(pos, hw, hh, cr), hw, hh, cr);
+}
+
+static void update_ball_physics_rect(TrackBall *ball, int16_t ax, int16_t ay, int32_t sensitivity_scale, int16_t hw, int16_t hh, int16_t cr) {
+
+    int32_t gx =  ax;
+    int32_t gy = -ay;
+
+    int32_t step = 256 * 10;
+        GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
+          GPoint p0 = angle_to_rounded_rect_edge(origin, prv_pos_to_polar_deg(ball->pos, hw, hh, cr), hw, hh, cr);
+          GPoint p1 = angle_to_rounded_rect_edge(origin, prv_pos_to_polar_deg(ball->pos + step, hw, hh, cr), hw, hh, cr);
+
+      int32_t dx = p1.x - p0.x;
+      int32_t dy = p1.y - p0.y;
+          if (dx == 0 && dy == 0) return;
+
+    int32_t dot = gx * dx + gy * dy;
+    int32_t acceleration = dot / sensitivity_scale;
+
+    // --- Corner resistance ---
+    // If both rel_x and rel_y are within the corner radius, we're in a corner arc.
+    int32_t rel_x = (int32_t)(p0.x - origin.x);
+    int32_t rel_y = (int32_t)(p0.y - origin.y);
+      bool in_corner = (rel_x > (hw - cr) || rel_x < -(hw - cr)) && (rel_y > (hh - cr) || rel_y < -(hh - cr));
+
+    // When in a corner, scale velocity down. 70 = ball retains 70% of its velocity through the corner. Increase (up to 100) to make corners easier; lower to make them stickier
+    #define CORNER_FRICTION  70
+
+       ball->velocity = ((ball->velocity + acceleration) * settings.FrictionVal) / 100;
+
+      if (in_corner) {
+          ball->velocity = (ball->velocity * CORNER_FRICTION) / 100;
+      }
+
+    ball->pos += ball->velocity;
+      int32_t total = prv_rect_perimeter(hw, hh, cr);
+         ball->pos = ((ball->pos % total) + total) % total;
+}
 
 static void physics_timer_callback(void *context); 
 
@@ -633,10 +865,12 @@ static void stop_gravity_mode() {
         app_timer_cancel(s_physics_timer);
         s_physics_timer = NULL;
     }
+
     if (s_gravity_timeout_timer) {
         app_timer_cancel(s_gravity_timeout_timer);
         s_gravity_timeout_timer = NULL;
     }
+
     if (s_return_timer) {
         app_timer_cancel(s_return_timer);
         s_return_timer = NULL;
@@ -650,47 +884,95 @@ static void stop_gravity_mode() {
 
 // Shortest distance in TRIG_MAX_ANGLE space
 static int32_t angle_diff(int32_t from, int32_t to) {
+
     int32_t d = (to - from) % TRIG_MAX_ANGLE;
-    if (d >  TRIG_MAX_ANGLE / 2) d -= TRIG_MAX_ANGLE;
-    if (d < -TRIG_MAX_ANGLE / 2) d += TRIG_MAX_ANGLE;
-    return d;
-}
+
+      if (d >  TRIG_MAX_ANGLE / 2) d -= TRIG_MAX_ANGLE;
+      if (d < -TRIG_MAX_ANGLE / 2) d += TRIG_MAX_ANGLE;
+    
+      return d;
+
+  }
 
 static int32_t current_hour_target() {
+
     int32_t a = (((prv_tick_time.tm_hour % 12) * TRIG_MAX_ANGLE) / 12)
               + ((prv_tick_time.tm_min * TRIG_MAX_ANGLE) / (12 * 60))
               - TRIG_MAX_ANGLE / 4;
-    return ((a % TRIG_MAX_ANGLE) + TRIG_MAX_ANGLE) % TRIG_MAX_ANGLE;
-}
+      return ((a % TRIG_MAX_ANGLE) + TRIG_MAX_ANGLE) % TRIG_MAX_ANGLE;
+
+  }
 static int32_t current_minute_target() {
+
     int32_t a = (prv_tick_time.tm_min * TRIG_MAX_ANGLE) / 60
               - TRIG_MAX_ANGLE / 4;
-    return ((a % TRIG_MAX_ANGLE) + TRIG_MAX_ANGLE) % TRIG_MAX_ANGLE;
-}
+      return ((a % TRIG_MAX_ANGLE) + TRIG_MAX_ANGLE) % TRIG_MAX_ANGLE;
+
+    }
 
 // Called at RETURN_TICK_MS — shifts balls toward their clock targets
 static void return_tick_handler(void *context) {
     s_return_timer = NULL;
 
-    int32_t hour_target   = current_hour_target();
+    #ifndef PBL_ROUND
+    if (settings.RectTracksOn) {
+
+        int32_t hour_total   = prv_rect_perimeter(config.hour_ball_track_rect_w, config.hour_ball_track_rect_h, config.inner_ball_track_rect_corner_r);
+
+        int32_t minute_total = prv_rect_perimeter(config.minute_ball_track_rect_w, config.minute_ball_track_rect_h, config.outer_ball_track_rect_corner_r);
+
+        int32_t hour_target_pos   = prv_angle_to_pos(current_hour_target(), config.hour_ball_track_rect_w, config.hour_ball_track_rect_h, config.inner_ball_track_rect_corner_r);
+
+        int32_t minute_target_pos = prv_angle_to_pos(current_minute_target(), config.minute_ball_track_rect_w, config.minute_ball_track_rect_h, config.outer_ball_track_rect_corner_r);
+
+        int32_t hour_delta = hour_target_pos - s_hour_ball.pos;
+        int32_t minute_delta = minute_target_pos - s_minute_ball.pos;
+
+          if (hour_delta > hour_total/2) hour_delta -= hour_total;
+          if (hour_delta < -hour_total/2) hour_delta += hour_total;
+          if (minute_delta >  minute_total/2) minute_delta -= minute_total;
+          if (minute_delta < -minute_total/2) minute_delta += minute_total;
+
+        s_hour_ball.pos += hour_delta >> RETURN_STEPS;
+        s_minute_ball.pos += minute_delta >> RETURN_STEPS;
+        s_hour_ball.pos = ((s_hour_ball.pos % hour_total) + hour_total) % hour_total;
+        s_minute_ball.pos = ((s_minute_ball.pos % minute_total) + minute_total) % minute_total;
+
+    layer_mark_dirty(s_canvas_layer);
+
+        bool hour_done = (hour_delta > -512 && hour_delta < 512);
+        bool minute_done = (minute_delta > -512 && minute_delta < 512);
+        if (hour_done && minute_done) {
+            s_hour_ball.pos   = hour_target_pos;
+            s_minute_ball.pos = minute_target_pos;
+              layer_mark_dirty(s_canvas_layer);
+              stop_gravity_mode();
+        } else {
+            s_return_timer = app_timer_register(TICK_MS, return_tick_handler, NULL);
+        }
+        return;
+    }
+    #endif
+
+    int32_t hour_target = current_hour_target();
     int32_t minute_target = current_minute_target();
 
-    int32_t hour_delta   = angle_diff(s_hour_ball.angle,   hour_target);
+    int32_t hour_delta = angle_diff(s_hour_ball.angle, hour_target);
     int32_t minute_delta = angle_diff(s_minute_ball.angle, minute_target);
 
-    // Move 1/8th of remaining distance each tick — exponential ease-out
-    s_hour_ball.angle   += hour_delta   >> RETURN_STEPS;
-    s_minute_ball.angle += minute_delta >> RETURN_STEPS;
+    // Move 1/8th of remaining distance each tick
+      s_hour_ball.angle += hour_delta >> RETURN_STEPS;
+      s_minute_ball.angle += minute_delta >> RETURN_STEPS;
 
     layer_mark_dirty(s_canvas_layer);
 
     // Threshold: ~0.5° in TRIG_MAX_ANGLE units (65536 / 720 ≈ 91)
-    bool hour_done   = (hour_delta   > -91 && hour_delta   < 91);
+    bool hour_done = (hour_delta > -91 && hour_delta   < 91);
     bool minute_done = (minute_delta > -91 && minute_delta < 91);
 
     if (hour_done && minute_done) {
-        // Snap exactly onto target then fully exit gravity mode
-        s_hour_ball.angle   = hour_target;
+        // Snap exactly onto target, then fully exit gravity mode
+        s_hour_ball.angle = hour_target;
         s_minute_ball.angle = minute_target;
         layer_mark_dirty(s_canvas_layer);
         stop_gravity_mode();
@@ -699,18 +981,18 @@ static void return_tick_handler(void *context) {
     }
 }
 
-// Fired after timeout — stop physics and begin rolling balls back to the clock
+// Fired after timeout — stop physics and begin rolling balls back to the current time
 static void gravity_timeout_handler(void *context) {
     s_gravity_timeout_timer = NULL;
     s_returning = true;
 
-    // Stop physics loop — lerp takes over from here
+    // Stop physics loop
     if (s_physics_timer) {
         app_timer_cancel(s_physics_timer);
         s_physics_timer = NULL;
     }
-    s_hour_ball.velocity   = 0;
-    s_minute_ball.velocity = 0;
+      s_hour_ball.velocity = 0;
+      s_minute_ball.velocity = 0;
 
     s_return_timer = app_timer_register(TICK_MS, return_tick_handler, NULL);
     #ifdef DEBUG
@@ -723,28 +1005,34 @@ static void start_gravity_mode() {
     struct tm *t = localtime(&temp);
 
     // Convert time to Pebble's TRIG_MAX_ANGLE space, with the -TRIG_MAX_ANGLE/4
-    // offset equivalent to the -90° used in the degree-based clock drawing.
-    int32_t ha = (((t->tm_hour % 12) * TRIG_MAX_ANGLE) / 12)
-               + ((t->tm_min        * TRIG_MAX_ANGLE) / (12 * 60))
-               - TRIG_MAX_ANGLE / 4;
-    s_hour_ball.angle = ((ha % TRIG_MAX_ANGLE) + TRIG_MAX_ANGLE) % TRIG_MAX_ANGLE;
 
-    int32_t ma = (t->tm_min * TRIG_MAX_ANGLE) / 60
-               - TRIG_MAX_ANGLE / 4;
-    s_minute_ball.angle = ((ma % TRIG_MAX_ANGLE) + TRIG_MAX_ANGLE) % TRIG_MAX_ANGLE;
+    int32_t ha = (((t->tm_hour % 12) * TRIG_MAX_ANGLE) / 12) + ((t->tm_min * TRIG_MAX_ANGLE) / (12 * 60)) - TRIG_MAX_ANGLE / 4;
+      s_hour_ball.angle = ((ha % TRIG_MAX_ANGLE) + TRIG_MAX_ANGLE) % TRIG_MAX_ANGLE;
 
-    s_hour_ball.velocity = 0;
+    int32_t ma = (t->tm_min * TRIG_MAX_ANGLE) / 60 - TRIG_MAX_ANGLE / 4;
+       s_minute_ball.angle = ((ma % TRIG_MAX_ANGLE) + TRIG_MAX_ANGLE) % TRIG_MAX_ANGLE;
+
+    s_hour_ball.velocity  = 0;
     s_minute_ball.velocity = 0;
-    
-    // Set track radii based on your Bearing design
-    s_hour_ball.radius = config.hour_ball_track_radius; 
-    s_minute_ball.radius = config.minute_ball_track_radius;
+    s_hour_ball.snapped = false;
+    s_minute_ball.snapped = false;
 
-    // Start the physics animation loop
+    #ifndef PBL_ROUND
+    if (settings.RectTracksOn) {
+        s_hour_ball.pos   = prv_angle_to_pos(s_hour_ball.angle, config.hour_ball_track_rect_w, config.hour_ball_track_rect_h, config.inner_ball_track_rect_corner_r);
+        s_minute_ball.pos = prv_angle_to_pos(s_minute_ball.angle, config.minute_ball_track_rect_w, config.minute_ball_track_rect_h, config.outer_ball_track_rect_corner_r);
+    }
+    #endif
+    
+    // Set track radius
+      s_hour_ball.radius = config.hour_ball_track_radius; 
+      s_minute_ball.radius = config.minute_ball_track_radius;
+
+    // Start physics animation loop
     if (s_physics_timer) {
         app_timer_cancel(s_physics_timer);
     }
-    s_physics_timer = app_timer_register(TICK_MS, physics_timer_callback, NULL);
+      s_physics_timer = app_timer_register(TICK_MS, physics_timer_callback, NULL);
 
     // Arm the timeout — return to clock after user-configured duration
     if (s_gravity_timeout_timer) {
@@ -763,14 +1051,86 @@ static void physics_timer_callback(void *context) {
         return;
     }
 
-    // Sample accelerometer
+    // Service peek the accelerometer
     AccelData accel;
     accel_service_peek(&accel);
 
-    // SensitivityVal scales the divisor: slider range 6-12 maps to 0.6x-1.2x of base values.
-    // At default of 10 behaviour is identical to hardcoded 6000/10000.
-    update_ball_physics(&s_hour_ball,   accel.x, accel.y, 6000  * settings.SensitivityVal / 10);
-    update_ball_physics(&s_minute_ball, accel.x, accel.y, 10000 * settings.SensitivityVal / 10);
+    // SensitivityVal scaling
+    #ifndef PBL_ROUND
+    if (settings.RectTracksOn) {
+        if (!s_hour_ball.snapped)
+            update_ball_physics_rect(&s_hour_ball,   accel.x, accel.y,
+ //                               10 * settings.SensitivityVal / 10,
+                                  25 * settings.SensitivityVal / 100,
+                                 config.hour_ball_track_rect_w, config.hour_ball_track_rect_h, config.inner_ball_track_rect_corner_r);
+        if (!s_minute_ball.snapped)
+            update_ball_physics_rect(&s_minute_ball, accel.x, accel.y,
+  //                               15 * settings.SensitivityVal / 10,
+                                  15 * settings.SensitivityVal / 100,
+                                 config.minute_ball_track_rect_w, config.minute_ball_track_rect_h, config.outer_ball_track_rect_corner_r);
+    } else
+    #endif
+      {
+        if (!s_hour_ball.snapped)
+              update_ball_physics(&s_hour_ball,   accel.x, accel.y, 6000  * settings.SensitivityVal / 10);
+        if (!s_minute_ball.snapped)
+              update_ball_physics(&s_minute_ball, accel.x, accel.y, 10000 * settings.SensitivityVal / 10);
+      }
+
+    // Magnet: snap each ball when it passes within range of its target
+    if (settings.MagnetsOn) {
+        #ifndef PBL_ROUND
+        if (settings.RectTracksOn) {
+            int32_t hour_total   = prv_rect_perimeter(config.hour_ball_track_rect_w, config.hour_ball_track_rect_h, config.inner_ball_track_rect_corner_r);
+            int32_t minute_total = prv_rect_perimeter(config.minute_ball_track_rect_w, config.minute_ball_track_rect_h, config.outer_ball_track_rect_corner_r);
+            int32_t ht = prv_angle_to_pos(current_hour_target(), config.hour_ball_track_rect_w, config.hour_ball_track_rect_h, config.inner_ball_track_rect_corner_r);
+            int32_t mt = prv_angle_to_pos(current_minute_target(), config.minute_ball_track_rect_w, config.minute_ball_track_rect_h, config.outer_ball_track_rect_corner_r);
+
+            // 5 pixel snap window in fixed-point
+            int32_t hd = s_hour_ball.pos - ht;
+            int32_t md = s_minute_ball.pos - mt;
+                if (hd > hour_total / 2) hd -= hour_total;
+                if (hd < -hour_total/ 2) hd += hour_total;
+                if (md > minute_total/ 2) md -= minute_total;
+                if (md < -minute_total / 2) md += minute_total;
+                if (!s_hour_ball.snapped && hd > -(5*256) && hd < (5*256)) {
+                    s_hour_ball.pos = ht;
+                    s_hour_ball.velocity = 0;
+                    s_hour_ball.snapped = true;
+                }
+                  if (!s_minute_ball.snapped && md > -(5*256) && md < (5*256)) {
+
+                        s_minute_ball.pos = mt;
+                        s_minute_ball.velocity = 0;
+                        s_minute_ball.snapped = true;
+                  }
+           } else
+        #endif
+        {
+            // Circular: ~2.5 degree snap window
+            int32_t snap = TRIG_MAX_ANGLE / 144;
+            int32_t ht = current_hour_target();
+            int32_t mt = current_minute_target();
+            int32_t hd = angle_diff(s_hour_ball.angle,   ht);
+            int32_t md = angle_diff(s_minute_ball.angle, mt);
+            if (!s_hour_ball.snapped && hd > -snap && hd < snap) {
+                s_hour_ball.angle    = ht;
+                s_hour_ball.velocity = 0;
+                s_hour_ball.snapped  = true;
+            }
+
+            if (!s_minute_ball.snapped && md > -snap && md < snap) {
+                s_minute_ball.angle    = mt;
+                s_minute_ball.velocity = 0;
+                s_minute_ball.snapped  = true;
+            }
+        }
+        if (s_hour_ball.snapped && s_minute_ball.snapped) {
+            layer_mark_dirty(s_canvas_layer);
+            stop_gravity_mode();
+            return;
+        }
+    }
 
     layer_mark_dirty(s_canvas_layer);
 
@@ -779,7 +1139,7 @@ static void physics_timer_callback(void *context) {
 }
 #endif // PBL_PLATFORM_APLITE
 
-static void update_weather_view_visibility() {
+static void update_weather_view_visibility() {   //TO DO
  // If UseWeather was just turned off, force the view back to main (0)
   if (!settings.UseWeather) {
     showWeather = 0;
@@ -834,17 +1194,24 @@ static void anim_timer_callback(void *context) {
 
   int32_t delta;
 
+  // Run 1.5x faster in rect mode to keep the on-screen duration similar
+  #ifndef PBL_ROUND
+  int32_t full_speed = settings.RectTracksOn ? (ANIM_FULL_DEG_TICK * 15)/10 : ANIM_FULL_DEG_TICK;
+  #else
+  int32_t full_speed = ANIM_FULL_DEG_TICK;
+  #endif
+
   if (s_anim_angle_offset < ANIM_ACCEL_DEG) {
     // Ease-in: linear ramp from 1 up to full speed over ANIM_ACCEL_DEG
     int32_t frac = (s_anim_angle_offset * 1000) / ANIM_ACCEL_DEG;  // 0..1000
-    delta = (ANIM_FULL_DEG_TICK * frac / 1000) + 1;
+    delta = (full_speed * frac / 1000) + 1;
   } else if (remaining > ANIM_DECEL_DEG) {
     // Full speed
-    delta = ANIM_FULL_DEG_TICK;
+    delta = full_speed;
   } else {
     // Ease-out:  wind-down over final ANIM_DECEL_DEG
     int32_t frac = (remaining * 1000) / ANIM_DECEL_DEG;  // 1000..0
-    delta = (ANIM_FULL_DEG_TICK * frac * frac / (1000 * 1000)) + 1;
+    delta = (full_speed * frac * frac / (1000 * 1000)) + 1;
   }
 
   if (delta > remaining) delta = remaining;
@@ -855,13 +1222,12 @@ static void anim_timer_callback(void *context) {
 }
 
 
-//// Shake/tap events, relate only to weather, TO DO
+//// Shake/tap events, weather TO DO
 static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
 
   #ifndef PBL_PLATFORM_APLITE
   if(settings.GravityModeOn){
    
-    // ms since app launch — subtract start offset so values stay small and readable
     time_t tap_s;
     uint16_t tap_ms;
     tap_ms = (uint16_t)time_ms(&tap_s, NULL);
@@ -873,7 +1239,7 @@ static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
     #endif
 
     if (gap >= DOUBLE_TAP_MIN_MS && gap <= DOUBLE_TAP_MAX_MS) {
-      // Valid double-tap — gap long enough to be intentional, short enough to be deliberate
+      // Valid double-tap: gap long enough to be intentional, short enough to be deliberate
       #ifdef DEBUG
         APP_LOG(APP_LOG_LEVEL_DEBUG, "Gravity: double tap registered (gap=%dms)", (int)gap);
       #endif
@@ -885,13 +1251,12 @@ static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
       }
       s_last_tap_time = 0; // Reset so a 3rd tap doesn't re-trigger
     } else if (gap > DOUBLE_TAP_MAX_MS) {
-      // Too slow — treat as first tap of a new sequence
+      // Too slow: treat as first tap of a new sequence
       s_last_tap_time = now;
     }
-    // gap < DOUBLE_TAP_MIN_MS: arrived too fast, almost certainly noise — ignore entirely
 
   }
-  #endif // PBL_PLATFORM_APLITE
+  #endif 
 
 
   #ifdef DEBUG
@@ -1019,14 +1384,14 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *hourcentre_t         = dict_find(iter, MESSAGE_KEY_HoursCentre);
   Tuple *anim_t               = dict_find(iter, MESSAGE_KEY_AnimOn);
   #ifndef PBL_PLATFORM_APLITE
-  Tuple *grav_t               = dict_find(iter, MESSAGE_KEY_GravityModeOn);
-  Tuple *gravtimeout_t        = dict_find(iter, MESSAGE_KEY_GravModeTimeout);
-  Tuple *friction_t           = dict_find(iter, MESSAGE_KEY_FrictionVal);
-  Tuple *sensitivity_t        = dict_find(iter, MESSAGE_KEY_SensitivityVal);
+    Tuple *grav_t             = dict_find(iter, MESSAGE_KEY_GravityModeOn);
+    Tuple *gravtimeout_t      = dict_find(iter, MESSAGE_KEY_GravModeTimeout);
+    Tuple *friction_t         = dict_find(iter, MESSAGE_KEY_FrictionVal);
+    Tuple *sensitivity_t      = dict_find(iter, MESSAGE_KEY_SensitivityVal);
+    Tuple *magnets_t          = dict_find(iter, MESSAGE_KEY_MagnetsOn);
   #endif
   Tuple *shadowon_t           = dict_find(iter, MESSAGE_KEY_ShadowOn);
   Tuple *shadowoffset_t       = dict_find(iter, MESSAGE_KEY_ShadowOffset);
-
   Tuple *bwthemeselect_t      = dict_find(iter, MESSAGE_KEY_BWThemeSelect);
   Tuple *themeselect_t        = dict_find(iter, MESSAGE_KEY_ThemeSelect);
   Tuple *fg_color_t           = dict_find(iter, MESSAGE_KEY_FGColor);
@@ -1042,18 +1407,18 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple *major_tick_color_t   = dict_find(iter, MESSAGE_KEY_MajorTickColor);
   Tuple *minor_tick_color_t   = dict_find(iter, MESSAGE_KEY_MinorTickColor);
   Tuple *batt_color_t         = dict_find(iter, MESSAGE_KEY_BatteryColor);
-
   Tuple *addzero12_t          = dict_find(iter, MESSAGE_KEY_AddZero12h);
   Tuple *remzero24_t          = dict_find(iter, MESSAGE_KEY_RemoveZero24h);
   Tuple *localampm_t          = dict_find(iter, MESSAGE_KEY_showlocalAMPM);
   Tuple *enable_time_t        = dict_find(iter, MESSAGE_KEY_ShowTime);
   Tuple *enable_date_t        = dict_find(iter, MESSAGE_KEY_EnableDate);
-
   Tuple *enable_minor_t       = dict_find(iter, MESSAGE_KEY_EnableMinorTick);
   Tuple *enable_major_t       = dict_find(iter, MESSAGE_KEY_EnableMajorTick);
+  #ifndef PBL_ROUND
+    Tuple *rect_tracks_t      = dict_find(iter, MESSAGE_KEY_RectTracksOn);
+  #endif
 
-
-  ///weather data
+  ///weather data, TO DO
 
   Tuple * wtemp_t = dict_find(iter, MESSAGE_KEY_WeatherTemp);
   Tuple * iconnow_tuple = dict_find(iter, MESSAGE_KEY_IconNow);
@@ -1064,6 +1429,13 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   Tuple * neigh_t = dict_find(iter, MESSAGE_KEY_NameLocation);
   Tuple * frequpdate = dict_find(iter, MESSAGE_KEY_UpSlider);
   Tuple * useweather_t = dict_find(iter, MESSAGE_KEY_UseWeather);
+
+  #ifndef PBL_ROUND
+    if (rect_tracks_t) {
+      settings.RectTracksOn = rect_tracks_t->value->int32 == 1;
+      settings_changed = true;
+    }
+  #endif
 
 
   if (shadowoffset_t){
@@ -1098,6 +1470,11 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
   if (sensitivity_t) {
     settings.SensitivityVal = (int)sensitivity_t->value->int32;
+    settings_changed = true;
+  }
+
+  if (magnets_t) {
+    settings.MagnetsOn = magnets_t->value->int32 == 1;
     settings_changed = true;
   }
   #endif // PBL_PLATFORM_APLITE
@@ -1214,7 +1591,7 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   }
 
 
-  //Control of data gathered for http
+  //Control of weather data
   #ifdef DEBUG
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Location Timezone is %s", citistring);
   #endif
@@ -1260,41 +1637,39 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
   //     }
   //   }
   // #endif
-////////////
-
 
   if (bwthemeselect_t) {
     if (strcmp(bwthemeselect_t->value->cstring, "bl") == 0) { ////black foreground, white tracks
       settings.FGColor = GColorBlack;
       settings.BackgroundColor1 = GColorWhite;
       if (shadowon_t) { settings.ShadowOn = shadowon_t->value->int32 == 1;}
-      settings.ShadowColor = settings.ShadowOn ? GColorBlack : GColorWhite;
-      settings.ShadowColor2 = settings.ShadowOn ? GColorWhite : GColorBlack;
-      settings.BallColor0 = GColorBlack;
-      settings.BallColor3 = GColorBlack;
-      settings.BallColor2 = GColorLightGray;
-      settings.BallColor1 = GColorWhite;
-      settings.TextColor1 = GColorWhite;
-      settings.BTQTColor = GColorBlack;
-      settings.MajorTickColor = GColorWhite;
-      settings.MinorTickColor = GColorWhite;
-      settings.BatteryColor = GColorBlack;
+            settings.ShadowColor = settings.ShadowOn ? GColorBlack : GColorWhite;
+            settings.ShadowColor2 = settings.ShadowOn ? GColorWhite : GColorBlack;
+            settings.BallColor0 = GColorBlack;
+            settings.BallColor3 = GColorBlack;
+            settings.BallColor2 = GColorLightGray;
+            settings.BallColor1 = GColorWhite;
+            settings.TextColor1 = GColorWhite;
+            settings.BTQTColor = GColorBlack;
+            settings.MajorTickColor = GColorWhite;
+            settings.MinorTickColor = GColorWhite;
+            settings.BatteryColor = GColorBlack;
       theme_settings_changed = true;
     } else if (strcmp(bwthemeselect_t->value->cstring, "wh") == 0) {  ///white foreground, black tracks
       settings.FGColor = GColorWhite;
       settings.BackgroundColor1 = GColorBlack;
       if (shadowon_t) { settings.ShadowOn = shadowon_t->value->int32 == 1;}
-      settings.ShadowColor = settings.ShadowOn ? GColorWhite : GColorBlack;
-      settings.ShadowColor2 = settings.ShadowOn ? GColorBlack : GColorWhite;
-      settings.BallColor0 = GColorBlack;
-      settings.BallColor3 = GColorBlack;
-      settings.BallColor2 = GColorLightGray;
-      settings.BallColor1 = GColorWhite;
-      settings.TextColor1 = GColorBlack;
-      settings.BTQTColor = GColorBlack;
-      settings.MajorTickColor = GColorBlack;
-      settings.MinorTickColor = GColorBlack;
-      settings.BatteryColor = GColorWhite;
+              settings.ShadowColor = settings.ShadowOn ? GColorWhite : GColorBlack;
+              settings.ShadowColor2 = settings.ShadowOn ? GColorBlack : GColorWhite;
+              settings.BallColor0 = GColorBlack;
+              settings.BallColor3 = GColorBlack;
+              settings.BallColor2 = GColorLightGray;
+              settings.BallColor1 = GColorWhite;
+              settings.TextColor1 = GColorBlack;
+              settings.BTQTColor = GColorBlack;
+              settings.MajorTickColor = GColorBlack;
+              settings.MinorTickColor = GColorBlack;
+              settings.BatteryColor = GColorWhite;
       theme_settings_changed = true;
     } else if (strcmp(bwthemeselect_t->value->cstring, "cu") == 0) {
       if (fg_color_t)     { settings.FGColor = GColorFromHEX(fg_color_t->value->int32);settings_changed = true; }
@@ -1326,89 +1701,96 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
 
   if (themeselect_t) {
     if (strcmp(themeselect_t->value->cstring, "bl") == 0) { ////black foreground, white tracks
-      settings.FGColor = GColorBlack;
-      settings.BackgroundColor1 = GColorWhite;
+        settings.FGColor = GColorBlack;
+        settings.BackgroundColor1 = GColorWhite;
       if (shadowon_t) { settings.ShadowOn = shadowon_t->value->int32 == 1;}
-      settings.ShadowColor = settings.ShadowOn ? GColorLightGray : GColorWhite;
-      settings.ShadowColor2 = settings.ShadowOn ? GColorDarkGray : GColorBlack;
-      settings.BallColor3 = GColorBulgarianRose;
-      settings.BallColor2 = GColorOrange;
-      settings.BallColor1 = GColorChromeYellow;
-      settings.BallColor0 = GColorBlack;
-      settings.TextColor1 = GColorChromeYellow;
-      settings.BTQTColor = GColorRed;
-      settings.MajorTickColor = GColorRed;
-      settings.MinorTickColor = GColorChromeYellow;
-      settings.BatteryColor = GColorBlack;
+          settings.ShadowColor = settings.ShadowOn ? GColorLightGray : GColorWhite;
+          settings.ShadowColor2 = settings.ShadowOn ? GColorDarkGray : GColorBlack;
+          settings.BallColor3 = GColorBulgarianRose;
+          settings.BallColor2 = GColorOrange;
+          settings.BallColor1 = GColorChromeYellow;
+          settings.BallColor0 = GColorBlack;
+          settings.TextColor1 = GColorChromeYellow;
+          settings.BTQTColor = GColorRed;
+          settings.MajorTickColor = GColorRed;
+          settings.MinorTickColor = GColorChromeYellow;
+          settings.BatteryColor = GColorBlack;
 
       theme_settings_changed = true;
+
     } else if (strcmp(themeselect_t->value->cstring, "wh") == 0) {   ///white foreground, black tracks
-      settings.FGColor = GColorWhite;
-      settings.BackgroundColor1 = GColorBlack;
+        settings.FGColor = GColorWhite;
+        settings.BackgroundColor1 = GColorBlack;
       if (shadowon_t) { settings.ShadowOn = shadowon_t->value->int32 == 1; }
-      settings.ShadowColor = settings.ShadowOn ? GColorOxfordBlue : GColorBlack;
-      settings.ShadowColor2 = settings.ShadowOn ? GColorLightGray : GColorWhite;
-      settings.BallColor3 = GColorDarkGray;
-      settings.BallColor2 = GColorLightGray;
-      settings.BallColor1 = GColorWhite;
-      settings.BallColor0 = GColorBlack;
-      settings.TextColor1 = GColorBlack;
-      settings.BTQTColor = GColorDarkGray;
-      settings.MajorTickColor = GColorRed;
-      settings.MinorTickColor = GColorOrange;
-      settings.BatteryColor = GColorWhite;
+            settings.ShadowColor = settings.ShadowOn ? GColorOxfordBlue : GColorBlack;
+            settings.ShadowColor2 = settings.ShadowOn ? GColorLightGray : GColorWhite;
+            settings.BallColor3 = GColorDarkGray;
+            settings.BallColor2 = GColorLightGray;
+            settings.BallColor1 = GColorWhite;
+            settings.BallColor0 = GColorBlack;
+            settings.TextColor1 = GColorBlack;
+            settings.BTQTColor = GColorDarkGray;
+            settings.MajorTickColor = GColorRed;
+            settings.MinorTickColor = GColorOrange;
+            settings.BatteryColor = GColorWhite;
 
       theme_settings_changed = true;
+
     } else if (strcmp(themeselect_t->value->cstring, "bu") == 0) {  ///paler blue foreground, dark blue tracks
-      settings.FGColor = GColorCobaltBlue;
-      settings.BackgroundColor1 = GColorDukeBlue;
+        settings.FGColor = GColorCobaltBlue;
+        settings.BackgroundColor1 = GColorDukeBlue;
       if (shadowon_t) { settings.ShadowOn = shadowon_t->value->int32 == 1; }
-      settings.ShadowColor = settings.ShadowOn ? GColorBlack : GColorDukeBlue;
-      settings.ShadowColor2 = settings.ShadowOn ? GColorDukeBlue : GColorCobaltBlue;
-      settings.BallColor3 = GColorDarkGray;
-      settings.BallColor2 = GColorLightGray;
-      settings.BallColor1 = GColorWhite;
-      settings.BallColor0 = GColorBlack;
-      settings.TextColor1 = GColorIcterine;
-      settings.BTQTColor = GColorDukeBlue;
-      settings.MajorTickColor = GColorIcterine;
-      settings.MinorTickColor = GColorIcterine;
-      settings.BatteryColor = GColorCobaltBlue;
+            settings.ShadowColor = settings.ShadowOn ? GColorBlack : GColorDukeBlue;
+            settings.ShadowColor2 = settings.ShadowOn ? GColorDukeBlue : GColorCobaltBlue;
+            settings.BallColor3 = GColorDarkGray;
+            settings.BallColor2 = GColorLightGray;
+            settings.BallColor1 = GColorWhite;
+            settings.BallColor0 = GColorBlack;
+            settings.TextColor1 = GColorIcterine;
+            settings.BTQTColor = GColorDukeBlue;
+            settings.MajorTickColor = GColorIcterine;
+            settings.MinorTickColor = GColorIcterine;
+            settings.BatteryColor = GColorCobaltBlue;
       theme_settings_changed = true;
+
     } else if (strcmp(themeselect_t->value->cstring, "pl") == 0) {  ///darker purple foreground, pink tracks
-      settings.FGColor = GColorPurple;
-      settings.BackgroundColor1 = GColorBrilliantRose;
+        settings.FGColor = GColorPurple;
+        settings.BackgroundColor1 = GColorBrilliantRose;
       if (shadowon_t) { settings.ShadowOn = shadowon_t->value->int32 == 1; }
-      settings.ShadowColor = settings.ShadowOn ? GColorMagenta : GColorBrilliantRose;
-      settings.ShadowColor2 = settings.ShadowOn ? GColorMagenta : GColorPurple;
-      settings.BallColor3 = GColorDarkGray;
-      settings.BallColor2 = GColorLightGray;
-      settings.BallColor1 = GColorWhite;
-      settings.BallColor0 = GColorBlack;
-      settings.TextColor1 = GColorBlack;
-      settings.BTQTColor = GColorPurple;
-      settings.MajorTickColor = GColorBlack;
-      settings.MinorTickColor = GColorBlack;
-      settings.BatteryColor = GColorPurple;
+          settings.ShadowColor = settings.ShadowOn ? GColorMagenta : GColorBrilliantRose;
+          settings.ShadowColor2 = settings.ShadowOn ? GColorMagenta : GColorPurple;
+          settings.BallColor3 = GColorDarkGray;
+          settings.BallColor2 = GColorLightGray;
+          settings.BallColor1 = GColorWhite;
+          settings.BallColor0 = GColorBlack;
+          settings.TextColor1 = GColorBlack;
+          settings.BTQTColor = GColorPurple;
+          settings.MajorTickColor = GColorBlack;
+          settings.MinorTickColor = GColorBlack;
+          settings.BatteryColor = GColorPurple;
+
       theme_settings_changed = true;
+
     } else if (strcmp(themeselect_t->value->cstring, "gr") == 0) {  //black foreground, green tracks
-      settings.FGColor = GColorBlack;
-      settings.BackgroundColor1 = GColorBrightGreen;
+        settings.FGColor = GColorBlack;
+        settings.BackgroundColor1 = GColorBrightGreen;
       if (shadowon_t) { settings.ShadowOn = shadowon_t->value->int32 == 1; }
-      settings.ShadowColor = settings.ShadowOn ? GColorKellyGreen : GColorInchworm;
-      settings.ShadowColor2 = settings.ShadowOn ? GColorDarkGreen : GColorBlack;
-      settings.BallColor3 = GColorDarkGray;
-      settings.BallColor2 = GColorLightGray;
-      settings.BallColor1 = GColorWhite;
-      settings.BallColor0 = GColorBlack;
-      settings.TextColor1 = GColorWhite;
-      settings.BTQTColor = GColorDarkGreen;
-      settings.MajorTickColor = GColorWhite;
-      settings.MinorTickColor = GColorBrightGreen;
-      settings.BatteryColor = GColorBlack;
+          settings.ShadowColor = settings.ShadowOn ? GColorKellyGreen : GColorInchworm;
+          settings.ShadowColor2 = settings.ShadowOn ? GColorDarkGreen : GColorBlack;
+          settings.BallColor3 = GColorDarkGray;
+          settings.BallColor2 = GColorLightGray;
+          settings.BallColor1 = GColorWhite;
+          settings.BallColor0 = GColorBlack;
+          settings.TextColor1 = GColorWhite;
+          settings.BTQTColor = GColorDarkGreen;
+          settings.MajorTickColor = GColorWhite;
+          settings.MinorTickColor = GColorBrightGreen;
+          settings.BatteryColor = GColorBlack;
+
       theme_settings_changed = true;
-    } else if (strcmp(themeselect_t->value->cstring, "cu") == 0) {
-      if (fg_color_t)     { settings.FGColor = GColorFromHEX(fg_color_t->value->int32); settings_changed = true; }
+    } 
+    else if (strcmp(themeselect_t->value->cstring, "cu") == 0) {
+      if (fg_color_t) { settings.FGColor = GColorFromHEX(fg_color_t->value->int32); settings_changed = true; }
       if (bg_color1_t) { settings.BackgroundColor1 = GColorFromHEX(bg_color1_t->value->int32); settings_changed = true; }
       if (shadowon_t) {
         settings.ShadowOn = shadowon_t->value->int32 == 1;
@@ -1420,19 +1802,18 @@ static void prv_inbox_received_handler(DictionaryIterator *iter, void *context) 
           settings.ShadowColor2 = settings.FGColor; settings_changed = true;
         }
       }
-      if (text_color1_t)  { settings.TextColor1 = GColorFromHEX(text_color1_t->value->int32); settings_changed = true; }
-      if (btqt_color_t)  { settings.BTQTColor = GColorFromHEX(btqt_color_t->value->int32); settings_changed = true; }
-      if (ball_col0_t)  { settings.BallColor0 = GColorFromHEX(ball_col0_t->value->int32); settings_changed = true; }
-      if (ball_col1_t)  { settings.BallColor1 = GColorFromHEX(ball_col1_t->value->int32); settings_changed = true; }
-      if (ball_col2_t)  { settings.BallColor2 = GColorFromHEX(ball_col2_t->value->int32);  settings_changed = true;}
-      if (ball_col3_t)  { settings.BallColor3 = GColorFromHEX(ball_col3_t->value->int32); settings_changed = true; }
-      if (major_tick_color_t)  { settings.MajorTickColor = GColorFromHEX(major_tick_color_t->value->int32);  settings_changed = true;}
-      if (minor_tick_color_t)  { settings.MinorTickColor = GColorFromHEX(minor_tick_color_t->value->int32);  settings_changed = true;}
-      if (batt_color_t)  { settings.BatteryColor = GColorFromHEX(batt_color_t->value->int32); settings_changed = true; }
+        if (text_color1_t) { settings.TextColor1 = GColorFromHEX(text_color1_t->value->int32); settings_changed = true; }
+        if (btqt_color_t) { settings.BTQTColor = GColorFromHEX(btqt_color_t->value->int32); settings_changed = true; }
+        if (ball_col0_t) { settings.BallColor0 = GColorFromHEX(ball_col0_t->value->int32); settings_changed = true; }
+        if (ball_col1_t) { settings.BallColor1 = GColorFromHEX(ball_col1_t->value->int32); settings_changed = true; }
+        if (ball_col2_t) { settings.BallColor2 = GColorFromHEX(ball_col2_t->value->int32);  settings_changed = true;}
+        if (ball_col3_t) { settings.BallColor3 = GColorFromHEX(ball_col3_t->value->int32); settings_changed = true; }
+        if (major_tick_color_t) { settings.MajorTickColor = GColorFromHEX(major_tick_color_t->value->int32);  settings_changed = true;}
+        if (minor_tick_color_t) { settings.MinorTickColor = GColorFromHEX(minor_tick_color_t->value->int32);  settings_changed = true;}
+        if (batt_color_t) { settings.BatteryColor = GColorFromHEX(batt_color_t->value->int32); settings_changed = true; }
       theme_settings_changed = true;
     }
   }
-
 
   /// update watchface for changes to settigns
   if (settings_changed || theme_settings_changed) {
@@ -1468,6 +1849,80 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
     GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
 
     GPoint offset_origin = GPoint((bounds.size.w / 2) + settings.ShadowOffset, (bounds.size.h / 2) + settings.ShadowOffset);
+
+    graphics_context_set_antialiased(ctx, true);
+
+#ifndef PBL_ROUND
+  if (settings.RectTracksOn) {
+
+  ////draw background shadow for battery bar (rect mode)
+
+     if (settings.EnableBattery && settings.BatteryArc) {
+
+      GRect BatterySideBarRect = config.BatterySideBarRect[0];
+
+      int bar_height = (s_battery_level * BatterySideBarRect.size.h) / 100;
+      int bar_y = BatterySideBarRect.origin.y + (BatterySideBarRect.size.h - bar_height) / 2;
+      graphics_context_set_fill_color(ctx, settings.ShadowColor);
+      graphics_fill_rect(ctx,
+        GRect(BatterySideBarRect.origin.x + settings.ShadowOffset,
+              bar_y + settings.ShadowOffset,
+              BatterySideBarRect.size.w,
+              bar_height),
+        0, GCornerNone);
+    }
+
+     if (settings.EnableBattery && !settings.BatteryArc) {
+      int battery_angle = (s_battery_level * 360)/100 - 90;
+      GPoint p1;
+      GPoint p2;
+      graphics_context_set_stroke_width(ctx, config.battery_line + 2);
+      graphics_context_set_stroke_color(ctx, settings.ShadowColor);
+     
+      p1 = angle_to_rounded_rect_edge(offset_origin, battery_angle,
+               config.inner_ring_rect_w - config.inner_ring_rect_stroke/2 +2,
+               config.inner_ring_rect_h - config.inner_ring_rect_stroke/2 +2,
+               config.inner_ring_rect_corner_r);
+      p2 = angle_to_rounded_rect_edge(offset_origin, battery_angle,
+               config.centre_rect_w,
+               config.centre_rect_h,
+               config.centre_rect_corner_r);
+      graphics_draw_line(ctx, p1, p2);
+      }
+
+    graphics_context_set_fill_color(ctx, settings.ShadowColor);
+
+    ///draw shadow for centre rect
+    graphics_fill_rect(ctx,
+      GRect(offset_origin.x - config.centre_rect_w,
+            offset_origin.y - config.centre_rect_h,
+            config.centre_rect_w * 2,
+            config.centre_rect_h * 2),
+      config.centre_rect_corner_r, GCornersAll);
+
+    ///draw shadow for inner ring rect
+    graphics_context_set_stroke_width(ctx, config.inner_ring_rect_stroke);
+    graphics_context_set_stroke_color(ctx, settings.ShadowColor);
+    graphics_draw_round_rect(ctx,
+      GRect(offset_origin.x - config.inner_ring_rect_w,
+            offset_origin.y - config.inner_ring_rect_h,
+            config.inner_ring_rect_w * 2,
+            config.inner_ring_rect_h * 2),
+      config.inner_ring_rect_corner_r);
+
+    ///draw shadow for outer ring rect
+    graphics_context_set_stroke_width(ctx, config.outer_ring_rect_stroke);
+    graphics_context_set_stroke_color(ctx, settings.ShadowColor);
+    graphics_draw_round_rect(ctx,
+      GRect(offset_origin.x - config.outer_ring_rect_w,
+            offset_origin.y - config.outer_ring_rect_h,
+            config.outer_ring_rect_w * 2,
+            config.outer_ring_rect_h * 2),
+      config.outer_ring_rect_corner_r);
+
+  } else
+#endif // !PBL_ROUND
+  {
 
   ////draw background shadow for battery arc
 
@@ -1505,7 +1960,6 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
       }
     
     
-    graphics_context_set_antialiased(ctx, true);
     graphics_context_set_fill_color(ctx, settings.ShadowColor);
 
     ///draw shadow for centre circle
@@ -1531,13 +1985,146 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
     );
     graphics_draw_arc(ctx, arc_rect_bg_shadow_outer, GOvalScaleModeFitCircle, DEG_TO_TRIGANGLE(0), DEG_TO_TRIGANGLE(360));
 
+  } // end circular bg
+
   }
+
+
+// Rect-mode text rotation lookup table. Gives the FCTX text_rotation for each minute position (0-59) when the moving digit follows a rounded-rect track
+// Digits flip at minutes 15->16 and 43->44 like round mode
+
+#if !defined(PBL_ROUND) && !defined(PBL_PLATFORM_APLITE)
+static const int32_t s_rect_rotation[60] = {
+  0, 0, 0, 0, 0, 1792, 6059, 10325, 14592, 16384,                   // mins  0- 9
+  16384, 16384, 16384, 16384, 16384, 16384, 49152, 49152, 49152, 49152,  // mins 10-19
+  49152, 49152, 50943, 55210, 59476, 63743, 0, 0, 0, 0,                 // mins 20-29
+  0, 0, 0, 0, 0, 1792, 6059, 10325, 14592, 16384,                    // mins 30-39
+  16384, 16384, 16384, 16384, 16384, 16384, 49152, 49152, 49152, 49152,  // mins 40-49
+  49152, 49152, 50943, 55210, 59476, 63743, 0, 0, 0, 0                   // mins 50-59
+};
+#endif 
 
   static void fg_update_proc(Layer *layer, GContext *ctx) {
      GRect bounds = layer_get_bounds(layer);
      GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
      graphics_context_set_antialiased(ctx, true);
 
+#ifndef PBL_ROUND
+  if (settings.RectTracksOn) {
+
+    /////draw foreground shadows/"edge" on the rings above the balls — RECT MODE
+
+    ///draw shadow for centre rect
+    graphics_context_set_fill_color(ctx, settings.ShadowColor2);
+    graphics_fill_rect(ctx,
+      GRect(origin.x + config.fg_shadow_offset - config.centre_rect_w,
+            origin.y + config.fg_shadow_offset - config.centre_rect_h,
+            config.centre_rect_w * 2,
+            config.centre_rect_h * 2),
+      config.centre_rect_corner_r, GCornersAll);
+
+    ///draw shadow for inner ring rect
+    graphics_context_set_stroke_width(ctx, config.inner_ring_rect_stroke);
+    graphics_context_set_stroke_color(ctx, settings.ShadowColor2);
+    graphics_draw_round_rect(ctx,
+      GRect(origin.x + config.fg_shadow_offset - config.inner_ring_rect_w,
+            origin.y + config.fg_shadow_offset - config.inner_ring_rect_h,
+            config.inner_ring_rect_w * 2,
+            config.inner_ring_rect_h * 2),
+      config.inner_ring_rect_corner_r);
+
+    ///draw shadow for outer ring rect
+    graphics_context_set_stroke_width(ctx, config.outer_ring_rect_stroke);
+    graphics_context_set_stroke_color(ctx, settings.ShadowColor2);
+    graphics_draw_round_rect(ctx,
+      GRect(origin.x + config.fg_shadow_offset - config.outer_ring_rect_w,
+            origin.y + config.fg_shadow_offset - config.outer_ring_rect_h,
+            config.outer_ring_rect_w * 2,
+            config.outer_ring_rect_h * 2),
+      config.outer_ring_rect_corner_r);
+
+    /////draw foreground coloured rings — RECT MODE
+
+    ///draw centre rect (NO OFFSET!)
+    graphics_context_set_fill_color(ctx, settings.FGColor);
+    graphics_fill_rect(ctx,
+      GRect(origin.x - config.centre_rect_w,
+            origin.y - config.centre_rect_h,
+            config.centre_rect_w * 2,
+            config.centre_rect_h * 2),
+      config.centre_rect_corner_r, GCornersAll);
+
+    ///draw inner ring rect (NO OFFSET!)
+    graphics_context_set_stroke_width(ctx, config.inner_ring_rect_stroke);
+    graphics_context_set_stroke_color(ctx, settings.FGColor);
+    graphics_draw_round_rect(ctx,
+      GRect(origin.x - config.inner_ring_rect_w,
+            origin.y - config.inner_ring_rect_h,
+            config.inner_ring_rect_w * 2,
+            config.inner_ring_rect_h * 2),
+      config.inner_ring_rect_corner_r);
+
+    ///draw outer ring rect (NO OFFSET!)
+    graphics_context_set_stroke_width(ctx, config.outer_ring_rect_stroke);
+    graphics_context_set_stroke_color(ctx, settings.FGColor);
+    graphics_draw_round_rect(ctx,
+      GRect(origin.x - config.outer_ring_rect_w,
+            origin.y - config.outer_ring_rect_h,
+            config.outer_ring_rect_w * 2,
+            config.outer_ring_rect_h * 2),
+      config.outer_ring_rect_corner_r);
+
+// Minor ticks — HybridToo rect style
+  if (settings.EnableMinorTick) {
+    for (int i = 0; i < 60; i++) {
+      int angle = i * 6;
+      draw_minor_tick_rect(ctx, angle, settings.MinorTickColor);
+    }
+  }
+    // Major ticks — HybridToo rect style
+    if(settings.EnableMajorTick){
+      for (int i = 0; i < 12; i++) {
+        int angle = i * 30 - 90;
+        draw_major_tick_rect(ctx, angle, settings.MajorTickColor);
+      }
+    }
+
+
+   if (settings.EnableBattery && settings.BatteryArc) {
+
+      GRect BatterySideBarRect = config.BatterySideBarRect[0];
+
+      int bar_height = (s_battery_level * BatterySideBarRect.size.h) / 100;
+      int bar_y = BatterySideBarRect.origin.y + (BatterySideBarRect.size.h - bar_height) / 2;
+      graphics_context_set_fill_color(ctx, settings.BatteryColor);
+      graphics_fill_rect(ctx,
+        GRect(BatterySideBarRect.origin.x,
+              bar_y,
+              BatterySideBarRect.size.w,
+              bar_height),
+        0, GCornerNone);
+  }
+
+   if (settings.EnableBattery && !settings.BatteryArc) {
+      int battery_angle = (s_battery_level * 360)/100 - 90;
+      GPoint p1;
+      GPoint p2;
+      graphics_context_set_stroke_width(ctx, config.battery_line + 2);
+      graphics_context_set_stroke_color(ctx, settings.BatteryColor);
+        p1 = angle_to_rounded_rect_edge(origin, battery_angle,
+               config.inner_ring_rect_w - config.inner_ring_rect_stroke/2 + 2,
+               config.inner_ring_rect_h - config.inner_ring_rect_stroke/2 + 2,
+               config.inner_ring_rect_corner_r);
+      p2 = angle_to_rounded_rect_edge(origin, battery_angle,
+               config.centre_rect_w,
+               config.centre_rect_h,
+               config.centre_rect_corner_r);
+      graphics_draw_line(ctx, p1, p2);
+  }
+
+  } else
+#endif 
+  {
 
     /////draw foreground shadows/"edge" on the rings above the balls
 
@@ -1614,8 +2201,7 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
     //draw foreground battery arc or bar
 
     if (settings.EnableBattery && settings.BatteryArc) {
-      //battery_callback(battery_state_service_peek().charge_percent);
-      //int battery_level = s_battery_level;
+      
       int battery_angle = (s_battery_level * 360)/100;
 
       graphics_context_set_stroke_width(ctx, config.battery_line);
@@ -1643,6 +2229,8 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
       graphics_draw_line(ctx, p1, p2);
       
   }
+
+  } 
 
   #ifdef PBL_PLATFORM_APLITE  //instead of FCTX, use system fonts and don't rotate the text on the ring
     if (settings.ShowTime) {
@@ -1673,10 +2261,23 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
 
       if(settings.HoursCentre){
         int minutes_angle = (minutes * 360) / 60 - 90;
-        GPoint minute_center = polar_to_point_offset(
-            GPoint(bounds.size.w / 2, bounds.size.h / 2),
-            minutes_angle,
-            config.middle_ring_radius);
+        GPoint minute_center;
+        #ifndef PBL_ROUND
+        if (settings.RectTracksOn) {
+          minute_center = angle_to_rounded_rect_edge(
+              GPoint(bounds.size.w / 2, bounds.size.h / 2),
+              minutes_angle,
+                         
+              config.inner_ring_rect_w, config.inner_ring_rect_h,
+              config.inner_ring_rect_corner_r);
+        } else
+        #endif
+        {
+          minute_center = polar_to_point_offset(
+              GPoint(bounds.size.w / 2, bounds.size.h / 2),
+              minutes_angle,
+              config.middle_ring_radius);
+        }
         GRect minute_rect = GRect(
             minute_center.x - (16 / 2) ,
             minute_center.y - (18 / 2) -4,
@@ -1687,12 +2288,24 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
             GTextOverflowModeFill, GTextAlignmentCenter, NULL);
       }
       else{
-        int hours12 = (s_hours == 0 || s_hours == 12) ? 12 : s_hours % 12;
         int32_t hour_angle = (hours * 360) / 12 + (minutes * 360) / 720 - 90;
-        GPoint hour_center = polar_to_point_offset(
-          GPoint(bounds.size.w / 2, bounds.size.h / 2),
-          hour_angle,
-          config.middle_ring_radius);
+        GPoint hour_center;
+        #ifndef PBL_ROUND
+        if (settings.RectTracksOn) {
+          hour_center = angle_to_rounded_rect_edge(
+              GPoint(bounds.size.w / 2, bounds.size.h / 2),
+              hour_angle,
+              
+              config.inner_ring_rect_w, config.inner_ring_rect_h,
+              config.inner_ring_rect_corner_r);
+        } else
+        #endif
+        {
+          hour_center = polar_to_point_offset(
+            GPoint(bounds.size.w / 2, bounds.size.h / 2),
+            hour_angle,
+            config.middle_ring_radius);
+        }
         GRect hour_rect = GRect(
             hour_center.x - (16 / 2) ,
             hour_center.y - (18 / 2) -4,
@@ -1716,7 +2329,7 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
       }
     }
 
-  //use FCTX for non-aplite watches, to get antialiased big fonts and rotation
+  //use FCTX for non-aplite watches
   #else 
    FContext fctx;
     if (FCTX_minute_Font == NULL) {
@@ -1762,8 +2375,6 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
         snprintf(timedraw, sizeof(timedraw), "%s", mindraw);
       }
 
-     
-      //fixed_t safe_radius = INT_TO_FIXED((bounds.size.w / 2 - BEZEL_INSET));
       fctx_set_color_bias(&fctx, 0);
 
       if(settings.HoursCentre){
@@ -1781,7 +2392,26 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
        fctx_begin_fill(&fctx);
        fctx_set_fill_color(&fctx, settings.TextColor1); 
        fctx_set_text_em_height(&fctx,FCTX_minute_Font, config.minute_font_size);
-       FPoint p = clockToCartesian(center_minutes, minute_text_radius, minute_angle);
+
+       FPoint p;
+       #ifndef PBL_ROUND
+       if (settings.RectTracksOn) {
+         // place digit on the minute rounded-rect track
+         int min_deg = (minutes * 360) / 60 - 90;
+         GPoint gp = angle_to_rounded_rect_edge(
+             GPoint(bounds.size.w / 2, bounds.size.h / 2),
+             min_deg,
+             config.inner_ring_rect_w, config.inner_ring_rect_h,
+             config.time_ring_rect_corner_r);
+         p = FPointI(gp.x, gp.y);
+         // rotation from lookup table — indexed by current minutes
+         text_rotation = s_rect_rotation[minutes];
+       } else
+       #endif
+       {
+         p = clockToCartesian(center_minutes, minute_text_radius, minute_angle);
+       }
+
        fctx_set_rotation(&fctx, text_rotation);
             fctx_set_offset(&fctx, p);
             fctx_draw_string(&fctx, mindraw, FCTX_minute_Font, GTextAlignmentCenter, text_anchor);
@@ -1804,7 +2434,29 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
           fctx_begin_fill(&fctx);
           fctx_set_fill_color(&fctx, settings.TextColor1);
           fctx_set_text_em_height(&fctx, FCTX_minute_Font, config.minute_font_size);
-          FPoint p = clockToCartesian(center_minutes, minute_text_radius, hour_angle);
+
+          FPoint p;
+          #ifndef PBL_ROUND
+          if (settings.RectTracksOn) {
+            // place digit on the hour rounded-rect track
+            int hr_deg = (hours * 360) / 12 + (minutes * 360) / 720 - 90;
+            GPoint gp = angle_to_rounded_rect_edge(
+                GPoint(bounds.size.w / 2, bounds.size.h / 2),
+                hr_deg,
+                //config.hour_ball_track_rect_w, config.hour_ball_track_rect_h,
+                //config.inner_ball_track_rect_corner_r);
+                config.inner_ring_rect_w, config.inner_ring_rect_h,
+                config.time_ring_rect_corner_r);
+            p = FPointI(gp.x, gp.y);
+            // rotation from lookup table — map hour-hand angle to equivalent minute index
+            int hour_min_idx = ((hours * 60 + minutes) / 12) % 60;
+            text_rotation = s_rect_rotation[hour_min_idx];
+          } else
+          #endif
+          {
+            p = clockToCartesian(center_minutes, minute_text_radius, hour_angle);
+          }
+
           fctx_set_rotation(&fctx, text_rotation);
           fctx_set_offset(&fctx, p);
           fctx_draw_string(&fctx, hournow, FCTX_minute_Font, GTextAlignmentCenter, text_anchor);  
@@ -1867,14 +2519,27 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
 
 
   #ifndef PBL_PLATFORM_APLITE
-  if(settings.GravityModeOn && (s_gravity_mode || s_returning)){
-    GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
-    // Convert TRIG_MAX_ANGLE space back to degrees for polar_to_point_offset
-    int hour_deg   = (int)(s_hour_ball.angle   * 360 / TRIG_MAX_ANGLE);
-    int minute_deg = (int)(s_minute_ball.angle * 360 / TRIG_MAX_ANGLE);
-    draw_hour_minute_balls(ctx, polar_to_point_offset(origin, hour_deg,   config.hour_ball_track_radius));
-    draw_hour_minute_balls(ctx, polar_to_point_offset(origin, minute_deg, config.minute_ball_track_radius));
-  }
+    if(settings.GravityModeOn && (s_gravity_mode || s_returning)){
+      GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
+        int hour_deg   = (int)(s_hour_ball.angle   * 360 / TRIG_MAX_ANGLE);
+        int minute_deg = (int)(s_minute_ball.angle * 360 / TRIG_MAX_ANGLE);
+      #ifndef PBL_ROUND
+          if (settings.RectTracksOn) {
+            draw_hour_minute_balls(ctx, prv_ball_point_from_pos(s_hour_ball.pos,
+                                      config.hour_ball_track_rect_w,
+                                      config.hour_ball_track_rect_h,
+                                      config.inner_ball_track_rect_corner_r));
+            draw_hour_minute_balls(ctx, prv_ball_point_from_pos(s_minute_ball.pos,
+                                      config.minute_ball_track_rect_w,
+                                      config.minute_ball_track_rect_h,
+                                      config.outer_ball_track_rect_corner_r));
+          } else
+        #endif // not PBL_ROUND
+      {
+        draw_hour_minute_balls(ctx, polar_to_point_offset(origin, hour_deg,   config.hour_ball_track_radius));
+        draw_hour_minute_balls(ctx, polar_to_point_offset(origin, minute_deg, config.minute_ball_track_radius));
+      }
+    }
   else
   #endif // PBL_PLATFORM_APLITE
 
@@ -1885,10 +2550,10 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
   hours = prv_tick_time.tm_hour % 12;
 
   #ifdef HOUR
-  hours = HOUR;
+    hours = HOUR;
   #endif
   #ifdef MINUTE
-  minutes = MINUTE;
+    minutes = MINUTE;
   #endif
 
   int hours_angle   = (hours * 360) / 12 + (minutes * 360) / (60 * 12) - 90;
@@ -1900,50 +2565,94 @@ static void bg_update_proc(Layer *layer, GContext *ctx) {
   }
 
   GPoint origin = GPoint(bounds.size.w / 2, bounds.size.h / 2);
+
+#ifndef PBL_ROUND
+  if (settings.RectTracksOn) {
+    // Rectangular tracks (rect watches only)
+    GPoint hour_pt   = ball_point_on_rect_track(hours_angle,
+                           config.hour_ball_track_rect_w,
+                           config.hour_ball_track_rect_h,
+                           config.inner_ball_track_rect_corner_r);
+    GPoint minute_pt = ball_point_on_rect_track(minutes_angle,
+                           config.minute_ball_track_rect_w,
+                           config.minute_ball_track_rect_h,
+                           config.outer_ball_track_rect_corner_r);
+    draw_hour_minute_balls(ctx, hour_pt);
+    draw_hour_minute_balls(ctx, minute_pt);
+
+    // BT icon on hour ball
+    if (!s_connected) {
+      int icon_w = config.BTQTRectWidth;
+      int icon_h = config.BTQTRectHeight;
+      GRect bt_rect = GRect(
+          hour_pt.x + config.BTIconXOffset - icon_w / 2,
+          hour_pt.y - icon_h / 2,
+          icon_w, icon_h);
+      graphics_context_set_text_color(ctx, settings.BTQTColor);
+      graphics_draw_text(ctx, "z", FontBTQTIcons, bt_rect,
+          GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+    }
+
+    // QT icon on minute ball
+    #ifndef PBL_PLATFORM_APLITE
+    if (quiet_time_is_active()) {
+      int icon_w = config.BTQTRectWidth;
+      int icon_h = config.BTQTRectHeight;
+      GRect qt_rect = GRect(
+          minute_pt.x + config.QTIconXOffset - icon_w / 2,
+          minute_pt.y - icon_h / 2,
+          icon_w, icon_h);
+      graphics_context_set_text_color(ctx, settings.BTQTColor);
+      graphics_draw_text(ctx, "\U0000E061", FontBTQTIcons, qt_rect,
+          GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+    }
+    #endif
+
+  } else
+#endif 
+  {
+    // Circular tracks
     draw_hour_minute_balls(ctx, polar_to_point_offset(origin, hours_angle, config.hour_ball_track_radius));
     draw_hour_minute_balls(ctx, polar_to_point_offset(origin, minutes_angle, config.minute_ball_track_radius));
 
-  // Draw BT icon centred on the hour ball
-      if (!s_connected) {  //remember to change back to !s_connected after testing
-
-        GPoint hour_ball_center = polar_to_point_offset(
-            GPoint(bounds.size.w / 2 + config.BTIconXOffset, bounds.size.h / 2),
-            hours_angle,
-            config.hour_ball_track_radius);
-
-        int icon_w = config.BTQTRectWidth;
-        int icon_h = config.BTQTRectHeight;
-        GRect bt_rect = GRect(
-            hour_ball_center.x - icon_w / 2,
-            hour_ball_center.y - icon_h / 2,
-            icon_w, icon_h);
-        graphics_context_set_text_color(ctx, settings.BTQTColor);
-        graphics_draw_text(ctx, "z", FontBTQTIcons, bt_rect,
-            GTextOverflowModeFill, GTextAlignmentCenter, NULL);
-      }
-
-  // Draw QT icon centred on the minute ball 
-      #ifndef PBL_PLATFORM_APLITE
-      if (quiet_time_is_active()) {  //remember to change back to true after testing
-
-        GPoint minute_ball_center = polar_to_point_offset(
-            GPoint(bounds.size.w / 2 + config.QTIconXOffset, bounds.size.h / 2),
-            minutes_angle,
-            config.minute_ball_track_radius);
-
-        int icon_w = config.BTQTRectWidth;
-        int icon_h = config.BTQTRectHeight;
-        GRect qt_rect = GRect(
-            minute_ball_center.x - icon_w / 2,
-            minute_ball_center.y - icon_h / 2,
-            icon_w, icon_h);
-        graphics_context_set_text_color(ctx, settings.BTQTColor);
-        graphics_draw_text(ctx, "\U0000E061", FontBTQTIcons, qt_rect,
-            GTextOverflowModeFill, GTextAlignmentCenter, NULL);
-      }
-      #endif
+    // Draw BT icon centred on the hour ball
+    if (!s_connected) {
+      GPoint hour_ball_center = polar_to_point_offset(
+          GPoint(bounds.size.w / 2 + config.BTIconXOffset, bounds.size.h / 2),
+          hours_angle,
+          config.hour_ball_track_radius);
+      int icon_w = config.BTQTRectWidth;
+      int icon_h = config.BTQTRectHeight;
+      GRect bt_rect = GRect(
+          hour_ball_center.x - icon_w / 2,
+          hour_ball_center.y - icon_h / 2,
+          icon_w, icon_h);
+      graphics_context_set_text_color(ctx, settings.BTQTColor);
+      graphics_draw_text(ctx, "z", FontBTQTIcons, bt_rect,
+          GTextOverflowModeFill, GTextAlignmentCenter, NULL);
     }
 
+    // Draw QT icon centred on the minute ball
+    #ifndef PBL_PLATFORM_APLITE
+    if (quiet_time_is_active()) {
+      GPoint minute_ball_center = polar_to_point_offset(
+          GPoint(bounds.size.w / 2 + config.QTIconXOffset, bounds.size.h / 2),
+          minutes_angle,
+          config.minute_ball_track_radius);
+      int icon_w = config.BTQTRectWidth;
+      int icon_h = config.BTQTRectHeight;
+      GRect qt_rect = GRect(
+          minute_ball_center.x - icon_w / 2,
+          minute_ball_center.y - icon_h / 2,
+          icon_w, icon_h);
+      graphics_context_set_text_color(ctx, settings.BTQTColor);
+      graphics_draw_text(ctx, "\U0000E061", FontBTQTIcons, qt_rect,
+          GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+    }
+    #endif
+  
+    }
+  }
 }
 
 
@@ -2346,7 +3055,7 @@ static void prv_window_load(Window *window) {
     light_enable(true);  ///for ShareX screencapture gifs.  Must comment out declaration on line 18 before publishing, otherwise the backlight will stay on!
   #endif
 
-  ///FONTS
+  ///fonts
   
   #ifndef PBL_PLATFORM_APLITE
     FCTX_hour_Font = ffont_create_from_resource(RESOURCE_ID_DIN_CONDENSED_FFONT);   
@@ -2367,8 +3076,9 @@ static void prv_window_load(Window *window) {
    medium_font = fonts_get_system_font(FONT_KEY_GOTHIC_24);
    FontWeatherIcons = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_WEATHERICONS_20));
    FontWeatherIconsSmall = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_WEATHERICONS_10));
+
   #elif defined (PBL_PLATFORM_EMERY) || defined (PBL_PLATFORM_GABBRO)
-  //  FCTX_Font = ffont_create_from_resource(RESOURCE_ID_DIN_CONDENSED_FFONT);
+  
    small_font = fonts_get_system_font(FONT_KEY_GOTHIC_18);
    small_medium_font = fonts_get_system_font(FONT_KEY_GOTHIC_28);
    medium_font = fonts_get_system_font(FONT_KEY_GOTHIC_28);
@@ -2437,9 +3147,7 @@ static void prv_window_load(Window *window) {
   // }
   // showSeconds = settings.EnableSecondsHand;
 
-  
-
-  if (settings.Weathertimecapture == 0 && settings.UseWeather) {
+   if (settings.Weathertimecapture == 0 && settings.UseWeather) {
       strcpy(settings.iconnowstring, "\U0000F03D");
       s_loop = 0;
       #ifdef LOG
@@ -2462,7 +3170,7 @@ static void prv_window_load(Window *window) {
   #endif
   
   
-  // Set update procs before adding to window so no draw fires before fonts are ready
+  // Set update procs before adding to window so no draw fires before fonts are ready - aplite crashing otherwise
   layer_set_update_proc(s_bg_layer, bg_update_proc);
   layer_set_update_proc(s_canvas_layer, hour_min_hands_canvas_update_proc);
   layer_set_update_proc(s_fg_layer, fg_update_proc);

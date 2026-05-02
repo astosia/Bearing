@@ -1,7 +1,7 @@
 {
   "name": "Bearing",
   "author": "astosia",
-  "version": "2.6.0",
+  "version": "3.7.0",
   "keywords": [
     "analog",
     "analogue",
@@ -44,6 +44,8 @@
       "AnimOn",
       "GravityModeOn",
       "GravModeTimeout",
+      "RectTracksOn",
+      "MagnetsOn",
       "SensitivityVal",
       "FrictionVal",
       "EnableBatteryLine",
@@ -123,6 +125,22 @@
     ],
     "resources": {
       "media": [
+        {
+          "file": "images/MenuIcon.png",
+          "type": "bitmap",
+          "name": "IMAGE_ICON",
+          "memoryFormat": "1Bit",
+          "menuIcon": true,
+          "targetPlatforms": [
+            "aplite",
+            "diorite",
+            "flint",
+            "basalt",
+            "chalk",
+            "emery",
+            "gabbro"
+          ]
+        },
         {
           "file": "fonts/dripicons-v2.ttf",
           "characterRegex": "[z]",
